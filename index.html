@@ -67,10 +67,10 @@
         <div class="control-group" style="width: 100px;">
             <label>Palette</label>
             <select id="color-select">
-                <option value="Hot" selected>Hot</option>
+                <option value="YlGnBu" selected>YlGnBu</option>
+                <option value="Hot">Hot</option>
                 <option value="Rainbow">Rainbow</option>
                 <option value="YlOrRd">YlOrRd</option>
-                <option value="YlGnBu">YlGnBu</option>
                 <option value="Greys">Greys</option>
                 <option value="Electric">Electric</option>
             </select>
@@ -91,8 +91,8 @@
         </div>
 
         <div class="control-group">
-            <label>Mag Scale: <span id="mag-val" class="val">1.0</span></label>
-            <input type="range" id="mag-slider" min="0" max="3" step="0.1">
+            <label>Mag Bonus: <span id="mag-val" class="val">0.0</span></label>
+            <input type="range" id="mag-slider" min="0" max="2" step="0.1" value="0">
         </div>
 
         <div class="control-group">
@@ -102,7 +102,7 @@
 
         <div class="control-group" style="width: 80px;">
             <label>Borders: <span id="border-val" class="val">1</span></label>
-            <input type="range" id="border-slider" min="0" max="5" step="1">
+            <input type="range" id="border-slider" min="0" max="4" step="1">
         </div>
     </div>
 
@@ -125,11 +125,13 @@
             maxDepth: 0,
             minTime: 0,
             maxTime: 0,
-            medianMag: 0
         };
 
         let staticBorderArrays = { x: [], y: [], z: [] };
         let staticGridArrays = { x: [], y: [], z: [] };
+
+        // Camera state persistence
+        let currentCamera = null;
 
         // --- Math Helpers ---
         function latLonToXYZ(lat, lon, radius) {
@@ -184,10 +186,10 @@
             try {
                 // 1. Force Reset Sliders/Selects
                 document.getElementById('size-slider').value = "2.0";
-                document.getElementById('mag-slider').value = "1.0";
+                document.getElementById('mag-slider').value = "0.0";
                 document.getElementById('depth-slider').value = "1.0";
                 document.getElementById('border-slider').value = "1";
-                document.getElementById('color-select').value = "Hot";
+                document.getElementById('color-select').value = "YlGnBu";
                 document.getElementById('color-mode').value = "depth";
                 updateLabels();
 
@@ -202,17 +204,12 @@
                 staticBorderArrays = processBorders(borderJson);
                 staticGridArrays = generateWireframeGrid();
 
-                // 3. Process Stats & Calculate Median
+                // 3. Process Stats
                 let minT = Infinity;
                 let maxT = -Infinity;
-                let allMags = [];
 
                 rawQuakeData = quakeJson.features.map(f => {
-                    // SANITIZATION:
-                    // Ensure nulls are 0, and minimum value is 0.1
-                    // This sanitized value is used for BOTH Median Calculation and Plotting
                     const mag = Math.max(f.properties.mag || 0, 0.1);
-
                     const depth = f.geometry.coordinates[2];
                     const time = f.properties.time;
 
@@ -220,8 +217,6 @@
                     if (depth > stats.maxDepth) stats.maxDepth = depth;
                     if (time < minT) minT = time;
                     if (time > maxT) maxT = time;
-
-                    allMags.push(mag);
 
                     return {
                         lat: f.geometry.coordinates[1],
@@ -233,19 +228,11 @@
                     };
                 });
 
-                // Calculate Median Magnitude
-                // Since 'allMags' contains the sanitized (0.1 min) values, the median is consistent.
-                allMags.sort((a, b) => a - b);
-                const mid = Math.floor(allMags.length / 2);
-                stats.medianMag = allMags.length % 2 !== 0 ? allMags[mid] : (allMags[mid - 1] + allMags[mid]) / 2;
-
-                console.log("Median Magnitude:", stats.medianMag);
-
                 stats.minTime = minT;
                 stats.maxTime = maxT;
 
                 document.getElementById('info-overlay').innerText =
-                    `Data: ${rawQuakeData.length} earthquakes from the past month. Median Mag: ${stats.medianMag.toFixed(1)}. Source: USGS.`;
+                    `Data: ${rawQuakeData.length} earthquakes (30 Days). Source: USGS.`;
 
                 document.getElementById('loading').style.display = 'none';
 
@@ -261,6 +248,13 @@
                 // 5. Initial Draw
                 updatePlot(true);
 
+                // 6. Camera Tracker: Listen for camera movement and save it
+                document.getElementById('chart-container').on('plotly_relayout', function(eventdata){
+                     if(eventdata['scene.camera']) {
+                        currentCamera = eventdata['scene.camera'];
+                     }
+                });
+
             } catch (err) {
                 console.error(err);
                 document.getElementById('loading').innerText = "Error loading data.";
@@ -272,38 +266,40 @@
             document.getElementById('mag-val').innerText = parseFloat(document.getElementById('mag-slider').value).toFixed(1);
             document.getElementById('depth-val').innerText = parseFloat(document.getElementById('depth-slider').value).toFixed(1);
 
-            // Map index to exponential width
             const bIndex = parseInt(document.getElementById('border-slider').value);
             document.getElementById('border-val').innerText = BORDER_WIDTHS[bIndex];
         }
 
         function updatePlot(isInitial = false) {
-            // Inputs
             const baseSize = parseFloat(document.getElementById('size-slider').value);
-            const magScale = parseFloat(document.getElementById('mag-slider').value);
+            const magBonusScale = parseFloat(document.getElementById('mag-slider').value);
             const depthScale = parseFloat(document.getElementById('depth-slider').value);
-
-            // Map slider index to width logic
-            const bIndex = parseInt(document.getElementById('border-slider').value);
-            const borderWidth = BORDER_WIDTHS[bIndex];
+            const borderWidth = BORDER_WIDTHS[parseInt(document.getElementById('border-slider').value)];
 
             const selectedPalette = document.getElementById('color-select').value;
             const colorMode = document.getElementById('color-mode').value;
 
-            // Arrays
             const qx = [], qy = [], qz = [], sizes = [], colors = [], texts = [];
 
+            // Hinge Midpoint
+            const MIDPOINT = 4.0;
+
             for (const q of rawQuakeData) {
-                // 1. Position with Depth Exaggeration
+                // 1. Position
                 const r_quake = EARTH_RADIUS - (q.depth * depthScale);
                 const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
 
                 qx.push(x); qy.push(y); qz.push(z);
 
-                // 2. Size Logic (Pivot around MEDIAN)
-                const deviation = (q.mag - stats.medianMag) * magScale;
-                const adjustedMag = stats.medianMag + deviation;
-                const s = baseSize * Math.max(0.2, adjustedMag);
+                // 2. Size Logic (Threshold Hinge)
+                let sizeFactor = q.mag;
+                if (q.mag > MIDPOINT) {
+                    const diff = q.mag - MIDPOINT;
+                    sizeFactor += (Math.pow(diff, 3) * magBonusScale);
+                }
+
+                // Apply Base Scale
+                const s = baseSize * (sizeFactor / 2.5);
                 sizes.push(s);
 
                 // 3. Colour Logic
@@ -312,7 +308,7 @@
                 } else if (colorMode === 'mag') {
                     colors.push(q.mag);
                 } else {
-                    colors.push(q.time); // Date mode
+                    colors.push(q.time);
                 }
 
                 // 4. Hover Text
@@ -337,7 +333,6 @@
             if (colorMode === 'depth') {
                 colorSettings.title = 'Depth (km)';
                 colorSettings.cmin = 0;
-                // Round max depth up to nearest 100
                 colorSettings.cmax = Math.ceil(stats.maxDepth / 100) * 100;
             } else if (colorMode === 'mag') {
                 colorSettings.title = 'Magnitude';
@@ -381,28 +376,24 @@
                 }
             };
 
-            // Layout
             const layout = {
                 paper_bgcolor: 'black', plot_bgcolor: 'black',
                 margin: { l: 0, r: 0, t: 0, b: 0 },
                 hovermode: 'closest',
-                uirevision: 'true',
                 scene: {
                     xaxis: { visible: false, showbackground: false },
                     yaxis: { visible: false, showbackground: false },
                     zaxis: { visible: false, showbackground: false },
                     aspectmode: 'data',
                     dragmode: 'orbit',
+                    // Use captured camera or default
+                    camera: currentCamera ? currentCamera : {
+                        eye: { x: 0.8, y: 0.8, z: 0.8 },
+                        center: { x: 0, y: 0, z: 0 }
+                    }
                 },
                 showlegend: false
             };
-
-            if (isInitial) {
-                layout.scene.camera = {
-                    eye: { x: 0.8, y: 0.8, z: 0.8 },
-                    center: { x: 0, y: 0, z: 0 }
-                };
-            }
 
             Plotly.react('chart-container', [gridTrace, borderTrace, quakeTrace], layout, {responsive: true});
         }
