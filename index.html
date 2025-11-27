@@ -236,6 +236,7 @@
                     };
                 });
 
+                // Calculate Mean Magnitude (on clamped values)
                 stats.avgMag = count > 0 ? (totalMag / count) : 0;
 
                 stats.minTime = minT;
@@ -312,9 +313,7 @@
                 const s = baseSize * (sizeFactor / 2.5);
                 sizes.push(s);
 
-                // --- GHOST SIZE CALCULATION ---
-                // "If the visual point is smaller than 10, make the ghost 10."
-                // "If the visual point is BIG (e.g. 50), make the ghost 50 so the whole thing is clickable."
+                // Ghost size logic: Ensure tiny dots have at least a 10px click area
                 ghostSizes.push(Math.max(s, 10));
 
                 // 3. Colour Logic
@@ -332,7 +331,7 @@
                     `<b>${q.place}</b><br>` +
                     `Date: ${dateStr}<br>` +
                     `Magnitude: ${q.realMag.toFixed(2)}<br>` +
-                    `Depth: ${q.depth}km`
+                    `Depth: ${q.depth.toFixed(2)}km`
                 );
             }
 
@@ -398,7 +397,7 @@
                 text: texts,
                 hoverinfo: 'text',
                 marker: {
-                    size: ghostSizes, // Uses dynamic ghost array
+                    size: ghostSizes,
                     color: 'rgba(0,0,0,0)',
                     opacity: 0.0,
                 }
