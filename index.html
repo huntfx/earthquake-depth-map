@@ -212,12 +212,8 @@
                 let count = 0;
 
                 rawQuakeData = quakeJson.features.map(f => {
-                    // Capture RAW magnitude for the tooltip
                     const realMag = f.properties.mag || 0;
-
-                    // Capture CLAMPED magnitude for Math/Visuals
                     const visualMag = Math.max(realMag, 0.1);
-
                     const depth = f.geometry.coordinates[2];
                     const time = f.properties.time;
 
@@ -226,7 +222,6 @@
                     if (time < minT) minT = time;
                     if (time > maxT) maxT = time;
 
-                    // Calculate average based on the Visual Magnitude (as requested previously)
                     totalMag += visualMag;
                     count++;
 
@@ -234,14 +229,13 @@
                         lat: f.geometry.coordinates[1],
                         lon: f.geometry.coordinates[0],
                         depth: depth,
-                        mag: visualMag, // Used for size/color calculations
-                        realMag: realMag, // Used only for tooltip text
+                        mag: visualMag, // Visual
+                        realMag: realMag, // Tooltip
                         time: time,
                         place: f.properties.place || "Unknown"
                     };
                 });
 
-                // Calculate Mean Magnitude (on clamped values)
                 stats.avgMag = count > 0 ? (totalMag / count) : 0;
 
                 stats.minTime = minT;
@@ -296,7 +290,7 @@
             const selectedPalette = document.getElementById('color-select').value;
             const colorMode = document.getElementById('color-mode').value;
 
-            const qx = [], qy = [], qz = [], sizes = [], colors = [], texts = [];
+            const qx = [], qy = [], qz = [], sizes = [], ghostSizes = [], colors = [], texts = [];
 
             // Hinge Midpoint = Average Magnitude
             const MIDPOINT = stats.avgMag;
@@ -308,16 +302,20 @@
 
                 qx.push(x); qy.push(y); qz.push(z);
 
-                // 2. Size Logic (Threshold Hinge) based on clamped visual mag
+                // 2. Size Logic
                 let sizeFactor = q.mag;
                 if (q.mag > MIDPOINT) {
                     const diff = q.mag - MIDPOINT;
                     sizeFactor += (Math.pow(diff, 3) * magBonusScale);
                 }
 
-                // Apply Base Scale
                 const s = baseSize * (sizeFactor / 2.5);
                 sizes.push(s);
+
+                // --- GHOST SIZE CALCULATION ---
+                // "If the visual point is smaller than 10, make the ghost 10."
+                // "If the visual point is BIG (e.g. 50), make the ghost 50 so the whole thing is clickable."
+                ghostSizes.push(Math.max(s, 10));
 
                 // 3. Colour Logic
                 if (colorMode === 'depth') {
@@ -328,7 +326,7 @@
                     colors.push(q.time);
                 }
 
-                // 4. Hover Text - Uses q.realMag for accuracy
+                // 4. Hover Text
                 const dateStr = new Date(q.time).toLocaleDateString();
                 texts.push(
                     `<b>${q.place}</b><br>` +
@@ -376,11 +374,11 @@
                 visible: borderWidth > 0
             };
 
+            // TRACE 1: VISUAL (Small, beautiful, non-interactive)
             const quakeTrace = {
                 type: 'scatter3d', mode: 'markers',
                 x: qx, y: qy, z: qz,
-                text: texts,
-                hoverinfo: 'text',
+                hoverinfo: 'skip',
                 marker: {
                     size: sizes,
                     color: colors,
@@ -393,7 +391,19 @@
                 }
             };
 
-            // Layout
+            // TRACE 2: GHOST (Invisible, Interactive, Minimum 10px)
+            const ghostTrace = {
+                type: 'scatter3d', mode: 'markers',
+                x: qx, y: qy, z: qz,
+                text: texts,
+                hoverinfo: 'text',
+                marker: {
+                    size: ghostSizes, // Uses dynamic ghost array
+                    color: 'rgba(0,0,0,0)',
+                    opacity: 0.0,
+                }
+            };
+
             const layout = {
                 paper_bgcolor: 'black', plot_bgcolor: 'black',
                 margin: { l: 0, r: 0, t: 0, b: 0 },
@@ -412,7 +422,7 @@
                 showlegend: false
             };
 
-            Plotly.react('chart-container', [gridTrace, borderTrace, quakeTrace], layout, {responsive: true});
+            Plotly.react('chart-container', [gridTrace, borderTrace, quakeTrace, ghostTrace], layout, {responsive: true});
         }
 
         initApp();
