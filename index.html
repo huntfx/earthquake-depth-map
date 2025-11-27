@@ -66,17 +66,17 @@
 
         <div class="control-group">
             <label>Base Scale: <span id="size-val" class="val">2.0</span></label>
-            <input type="range" id="size-slider" min="0.5" max="5.0" step="0.5" value="2.0">
+            <input type="range" id="size-slider" min="0.5" max="5.0" step="0.5">
         </div>
 
         <div class="control-group">
-            <label>Magnitude Scale: <span id="exp-val" class="val">1.0</span></label>
-            <input type="range" id="exp-slider" min="0" max="4" step="0.1" value="1.0">
+            <label>Mag Scale: <span id="exp-val" class="val">1.0</span></label>
+            <input type="range" id="exp-slider" min="0" max="4" step="0.1">
         </div>
 
         <div class="control-group">
-            <label>Depth Scale: <span id="depth-val" class="val">2</span>x</label>
-            <input type="range" id="depth-slider" min="1" max="10" step="1" value="2">
+            <label>Depth Scale: <span id="depth-val" class="val">2.0</span>x</label>
+            <input type="range" id="depth-slider" min="1" max="10" step="0.1">
         </div>
     </div>
 
@@ -106,8 +106,6 @@
         }
 
         // --- Data Generators ---
-
-        // 1. Process Country Borders
         function processBorders(geojson) {
             const bx = [], by = [], bz = [];
             geojson.features.forEach(feature => {
@@ -125,26 +123,23 @@
             return { x: bx, y: by, z: bz };
         }
 
-        // 2. Generate Wireframe Grid (Replaces the solid sphere)
         function generateWireframeGrid() {
             const gx = [], gy = [], gz = [];
-
-            // Latitude Rings (every 15 degrees)
+            // Latitude Rings
             for (let lat = -90; lat <= 90; lat += 15) {
                 for (let lon = -180; lon <= 180; lon += 5) {
                     const [x, y, z] = latLonToXYZ(lat, lon, EARTH_RADIUS);
                     gx.push(x); gy.push(y); gz.push(z);
                 }
-                gx.push(null); gy.push(null); gz.push(null); // Break line
+                gx.push(null); gy.push(null); gz.push(null);
             }
-
-            // Longitude Lines (every 30 degrees)
+            // Longitude Lines
             for (let lon = -180; lon <= 180; lon += 30) {
                 for (let lat = -90; lat <= 90; lat += 5) {
                     const [x, y, z] = latLonToXYZ(lat, lon, EARTH_RADIUS);
                     gx.push(x); gy.push(y); gz.push(z);
                 }
-                gx.push(null); gy.push(null); gz.push(null); // Break line
+                gx.push(null); gy.push(null); gz.push(null);
             }
             return { x: gx, y: gy, z: gz };
         }
@@ -153,6 +148,13 @@
 
         async function initApp() {
             try {
+                // 1. Force Reset Sliders to Defaults (Fixes Browser Cache Issue)
+                document.getElementById('size-slider').value = "2.0";
+                document.getElementById('exp-slider').value = "1.0";
+                document.getElementById('depth-slider').value = "2.0";
+                updateLabels(); // Sync text immediately
+
+                // 2. Fetch Data
                 const [quakeRes, borderRes] = await Promise.all([
                     fetch(USGS_URL),
                     fetch(BORDERS_URL)
@@ -163,7 +165,7 @@
                 staticBorderArrays = processBorders(borderJson);
                 staticGridArrays = generateWireframeGrid();
 
-                // Process Data & Calculate Dynamic Stats
+                // 3. Process Stats
                 let totalMag = 0;
                 let validCount = 0;
 
@@ -171,7 +173,6 @@
                     const mag = Math.max(f.properties.mag || 0, 0.1);
                     const depth = f.geometry.coordinates[2];
 
-                    // Update Max Stats
                     if (mag > stats.maxMag) stats.maxMag = mag;
                     if (depth > stats.maxDepth) stats.maxDepth = depth;
 
@@ -192,7 +193,7 @@
 
                 document.getElementById('loading').style.display = 'none';
 
-                // Event Listeners
+                // 4. Attach Listeners
                 ['size-slider', 'depth-slider', 'exp-slider'].forEach(id => {
                     document.getElementById(id).addEventListener('input', () => {
                         updateLabels();
@@ -203,6 +204,7 @@
                 const radios = document.querySelectorAll('input[name="color-mode"]');
                 radios.forEach(radio => radio.addEventListener('change', () => updatePlot()));
 
+                // 5. Initial Draw
                 updatePlot(true);
 
             } catch (err) {
@@ -212,9 +214,10 @@
         }
 
         function updateLabels() {
-            document.getElementById('size-val').innerText = document.getElementById('size-slider').value;
-            document.getElementById('depth-val').innerText = document.getElementById('depth-slider').value;
-            document.getElementById('exp-val').innerText = document.getElementById('exp-slider').value;
+            // Updated to support decimals
+            document.getElementById('size-val').innerText = parseFloat(document.getElementById('size-slider').value).toFixed(1);
+            document.getElementById('exp-val').innerText = parseFloat(document.getElementById('exp-slider').value).toFixed(1);
+            document.getElementById('depth-val').innerText = parseFloat(document.getElementById('depth-slider').value).toFixed(1);
         }
 
         function updatePlot(isInitial = false) {
@@ -226,22 +229,19 @@
             const qx = [], qy = [], qz = [], sizes = [], colors = [], texts = [];
 
             for (const q of rawQuakeData) {
-                // 1. Depth Calculation
+                // Depth Math
                 const r_quake = EARTH_RADIUS - (q.depth * depthScale);
                 const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
 
                 qx.push(x); qy.push(y); qz.push(z);
 
-                // 2. New Size Math (Centered on Average)
-                // Ratio: (Mag / AvgMag) ^ Scale
+                // Size Math: (Mag / AvgMag) ^ Scale
                 const ratio = Math.pow((q.mag / stats.avgMag), magScale);
-                const s = baseScale * ratio * 2; // *2 is a visual multiplier for Plotly pixels
+                const s = baseScale * ratio * 2;
                 sizes.push(s);
 
-                // 3. Colors
                 colors.push(colorMode === 'depth' ? q.depth : q.mag);
 
-                // 4. Tooltips
                 texts.push(
                     `<b>${q.place}</b><br>` +
                     `Magnitude: ${q.mag.toFixed(1)}<br>` +
@@ -250,46 +250,36 @@
                 );
             }
 
-            // --- Dynamic Color Settings ---
+            // Color Settings
             let colorSettings = {};
             if (colorMode === 'depth') {
                 colorSettings = {
                     title: 'Depth (km)',
-                    cmin: 0,
-                    cmax: stats.maxDepth, // Dynamic Max
-                    colorscale: 'Rainbow',
-                    reversescale: false
+                    cmin: 0, cmax: stats.maxDepth,
+                    colorscale: 'Rainbow'
                 };
             } else {
                 colorSettings = {
                     title: 'Magnitude',
-                    cmin: 0,
-                    cmax: stats.maxMag, // Dynamic Max
-                    colorscale: 'Rainbow',
-                    reversescale: false
+                    cmin: 0, cmax: stats.maxMag,
+                    colorscale: 'Rainbow'
                 };
             }
 
-            // TRACE 1: Wireframe Grid (Replaces transparent sphere)
-            // This is 'lines' mode, which allows clicks to pass through gaps!
             const gridTrace = {
                 type: 'scatter3d', mode: 'lines',
                 x: staticGridArrays.x, y: staticGridArrays.y, z: staticGridArrays.z,
                 line: { color: '#333', width: 1 },
-                opacity: 0.5,
-                hoverinfo: 'skip'
+                opacity: 0.5, hoverinfo: 'skip'
             };
 
-            // TRACE 2: Country Borders
             const borderTrace = {
                 type: 'scatter3d', mode: 'lines',
                 x: staticBorderArrays.x, y: staticBorderArrays.y, z: staticBorderArrays.z,
                 line: { color: '#00ffff', width: 1 },
-                opacity: 0.4,
-                hoverinfo: 'skip'
+                opacity: 0.4, hoverinfo: 'skip'
             };
 
-            // TRACE 3: Earthquakes
             const quakeTrace = {
                 type: 'scatter3d', mode: 'markers',
                 x: qx, y: qy, z: qz,
@@ -303,11 +293,8 @@
                     cmax: colorSettings.cmax,
                     colorbar: {
                         title: colorSettings.title,
-                        x: 0,
-                        len: 0.5,
-                        thickness: 15,
-                        titlefont: {color: 'white'},
-                        tickfont: {color: 'white'}
+                        x: 0, len: 0.5, thickness: 15,
+                        titlefont: {color: 'white'}, tickfont: {color: 'white'}
                     },
                     opacity: 1.0,
                     line: { width: 0 }
@@ -315,8 +302,7 @@
             };
 
             const layout = {
-                paper_bgcolor: 'black',
-                plot_bgcolor: 'black',
+                paper_bgcolor: 'black', plot_bgcolor: 'black',
                 margin: { l: 0, r: 0, t: 0, b: 0 },
                 hovermode: 'closest',
                 scene: {
@@ -333,7 +319,6 @@
                 showlegend: false
             };
 
-            // Use 'gridTrace' instead of 'sphereTrace'
             Plotly.react('chart-container', [gridTrace, borderTrace, quakeTrace], layout, {responsive: true});
         }
 
