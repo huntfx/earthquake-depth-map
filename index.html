@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Earthquake Map JS</title>
+    <title>Earthquake Depth Map</title>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 
     <style>
@@ -62,7 +62,7 @@
     <div id="loading">Fetching USGS Data...</div>
 
     <div id="controls-container">
-        <h2>Earthquake Depth Map</h2>
+        <h2>Earthquake<br>Depth Map</h2>
 
         <div class="control-group" style="width: 100px;">
             <label>Palette</label>
@@ -79,8 +79,8 @@
         <div class="control-group" style="width: 100px;">
             <label>Colour By</label>
             <select id="color-mode">
-                <option value="depth" selected>Depth</option>
-                <option value="mag">Magnitude</option>
+                <option value="mag" selected>Magnitude</option>
+                <option value="depth">Depth</option>
                 <option value="date">Date</option>
             </select>
         </div>
@@ -191,7 +191,7 @@
                 document.getElementById('depth-slider').value = "2.5";
                 document.getElementById('border-slider').value = "1";
                 document.getElementById('color-select').value = "Hot";
-                document.getElementById('color-mode').value = "depth";
+                document.getElementById('color-mode').value = "mag";
                 updateLabels();
 
                 // 2. Fetch Data
@@ -212,30 +212,36 @@
                 let count = 0;
 
                 rawQuakeData = quakeJson.features.map(f => {
-                    // Sanitization: min 0.1
-                    const mag = Math.max(f.properties.mag || 0, 0.1);
+                    // Capture RAW magnitude for the tooltip
+                    const realMag = f.properties.mag || 0;
+
+                    // Capture CLAMPED magnitude for Math/Visuals
+                    const visualMag = Math.max(realMag, 0.1);
+
                     const depth = f.geometry.coordinates[2];
                     const time = f.properties.time;
 
-                    if (mag > stats.maxMag) stats.maxMag = mag;
+                    if (visualMag > stats.maxMag) stats.maxMag = visualMag;
                     if (depth > stats.maxDepth) stats.maxDepth = depth;
                     if (time < minT) minT = time;
                     if (time > maxT) maxT = time;
 
-                    totalMag += mag;
+                    // Calculate average based on the Visual Magnitude (as requested previously)
+                    totalMag += visualMag;
                     count++;
 
                     return {
                         lat: f.geometry.coordinates[1],
                         lon: f.geometry.coordinates[0],
                         depth: depth,
-                        mag: mag,
+                        mag: visualMag, // Used for size/color calculations
+                        realMag: realMag, // Used only for tooltip text
                         time: time,
                         place: f.properties.place || "Unknown"
                     };
                 });
 
-                // Calculate Mean (Average) Magnitude
+                // Calculate Mean Magnitude (on clamped values)
                 stats.avgMag = count > 0 ? (totalMag / count) : 0;
 
                 stats.minTime = minT;
@@ -273,7 +279,6 @@
 
         function updateLabels() {
             document.getElementById('size-val').innerText = parseFloat(document.getElementById('size-slider').value).toFixed(1);
-            // Show 2 decimals for Mag Bonus since step is 0.01
             document.getElementById('mag-val').innerText = parseFloat(document.getElementById('mag-slider').value).toFixed(2);
             document.getElementById('depth-val').innerText = parseFloat(document.getElementById('depth-slider').value).toFixed(1);
 
@@ -303,9 +308,7 @@
 
                 qx.push(x); qy.push(y); qz.push(z);
 
-                // 2. Size Logic (Threshold Hinge)
-                // If Mag <= Avg, size is proportional to mag (Linear)
-                // If Mag > Avg, add exponential bonus
+                // 2. Size Logic (Threshold Hinge) based on clamped visual mag
                 let sizeFactor = q.mag;
                 if (q.mag > MIDPOINT) {
                     const diff = q.mag - MIDPOINT;
@@ -313,7 +316,6 @@
                 }
 
                 // Apply Base Scale
-                // Normalized division to keep visual sizes reasonable
                 const s = baseSize * (sizeFactor / 2.5);
                 sizes.push(s);
 
@@ -326,12 +328,12 @@
                     colors.push(q.time);
                 }
 
-                // 4. Hover Text
+                // 4. Hover Text - Uses q.realMag for accuracy
                 const dateStr = new Date(q.time).toLocaleDateString();
                 texts.push(
                     `<b>${q.place}</b><br>` +
                     `Date: ${dateStr}<br>` +
-                    `Magnitude: ${q.mag.toFixed(1)}<br>` +
+                    `Magnitude: ${q.realMag.toFixed(2)}<br>` +
                     `Depth: ${q.depth}km`
                 );
             }
@@ -402,7 +404,6 @@
                     zaxis: { visible: false, showbackground: false },
                     aspectmode: 'data',
                     dragmode: 'orbit',
-                    // Use captured camera or default
                     camera: currentCamera ? currentCamera : {
                         eye: { x: 0.8, y: 0.8, z: 0.8 },
                         center: { x: 0, y: 0, z: 0 }
