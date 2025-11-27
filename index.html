@@ -115,6 +115,9 @@
         const USGS_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_month.geojson";
         const BORDERS_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
 
+        // Exponential steps for borders
+        const BORDER_WIDTHS = [0, 1, 2, 4, 8, 16];
+
         // --- State ---
         let rawQuakeData = [];
         let stats = {
@@ -205,7 +208,11 @@
                 let allMags = [];
 
                 rawQuakeData = quakeJson.features.map(f => {
+                    // SANITIZATION:
+                    // Ensure nulls are 0, and minimum value is 0.1
+                    // This sanitized value is used for BOTH Median Calculation and Plotting
                     const mag = Math.max(f.properties.mag || 0, 0.1);
+
                     const depth = f.geometry.coordinates[2];
                     const time = f.properties.time;
 
@@ -227,6 +234,7 @@
                 });
 
                 // Calculate Median Magnitude
+                // Since 'allMags' contains the sanitized (0.1 min) values, the median is consistent.
                 allMags.sort((a, b) => a - b);
                 const mid = Math.floor(allMags.length / 2);
                 stats.medianMag = allMags.length % 2 !== 0 ? allMags[mid] : (allMags[mid - 1] + allMags[mid]) / 2;
@@ -263,7 +271,10 @@
             document.getElementById('size-val').innerText = parseFloat(document.getElementById('size-slider').value).toFixed(1);
             document.getElementById('mag-val').innerText = parseFloat(document.getElementById('mag-slider').value).toFixed(1);
             document.getElementById('depth-val').innerText = parseFloat(document.getElementById('depth-slider').value).toFixed(1);
-            document.getElementById('border-val').innerText = document.getElementById('border-slider').value;
+
+            // Map index to exponential width
+            const bIndex = parseInt(document.getElementById('border-slider').value);
+            document.getElementById('border-val').innerText = BORDER_WIDTHS[bIndex];
         }
 
         function updatePlot(isInitial = false) {
@@ -271,7 +282,10 @@
             const baseSize = parseFloat(document.getElementById('size-slider').value);
             const magScale = parseFloat(document.getElementById('mag-slider').value);
             const depthScale = parseFloat(document.getElementById('depth-slider').value);
-            const borderWidth = parseInt(document.getElementById('border-slider').value);
+
+            // Map slider index to width logic
+            const bIndex = parseInt(document.getElementById('border-slider').value);
+            const borderWidth = BORDER_WIDTHS[bIndex];
 
             const selectedPalette = document.getElementById('color-select').value;
             const colorMode = document.getElementById('color-mode').value;
@@ -287,11 +301,8 @@
                 qx.push(x); qy.push(y); qz.push(z);
 
                 // 2. Size Logic (Pivot around MEDIAN)
-                // Formula: Median + (Actual - Median) * Scale
                 const deviation = (q.mag - stats.medianMag) * magScale;
                 const adjustedMag = stats.medianMag + deviation;
-
-                // Final Size: Base * Adjusted. Clamp to min 0.2
                 const s = baseSize * Math.max(0.2, adjustedMag);
                 sizes.push(s);
 
@@ -326,7 +337,8 @@
             if (colorMode === 'depth') {
                 colorSettings.title = 'Depth (km)';
                 colorSettings.cmin = 0;
-                colorSettings.cmax = stats.maxDepth;
+                // Round max depth up to nearest 100
+                colorSettings.cmax = Math.ceil(stats.maxDepth / 100) * 100;
             } else if (colorMode === 'mag') {
                 colorSettings.title = 'Magnitude';
                 colorSettings.cmin = 0;
@@ -374,7 +386,6 @@
                 paper_bgcolor: 'black', plot_bgcolor: 'black',
                 margin: { l: 0, r: 0, t: 0, b: 0 },
                 hovermode: 'closest',
-                // Uirevision tells Plotly: "If this ID hasn't changed, don't reset the camera/zoom"
                 uirevision: 'true',
                 scene: {
                     xaxis: { visible: false, showbackground: false },
@@ -386,7 +397,6 @@
                 showlegend: false
             };
 
-            // Only set camera on initial load
             if (isInitial) {
                 layout.scene.camera = {
                     eye: { x: 0.8, y: 0.8, z: 0.8 },
