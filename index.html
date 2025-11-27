@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Earthquake Map JS</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background-color: black;
+            font-family: sans-serif;
+            overflow: hidden; /* Prevent scrolling */
+        }
+        #controls-container {
+            background-color: #222;
+            padding: 15px;
+            color: white;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: center;
+            justify-content: center;
+        }
+        h2 { margin: 0; font-size: 20px; margin-right: 20px;}
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            width: 200px;
+        }
+        label { font-size: 12px; margin-bottom: 5px; font-weight: bold;}
+        input[type=range] { width: 100%; cursor: pointer;}
+        #chart-container {
+            /* Height is 100vh minus the approx height of the controls header */
+            height: calc(100vh - 80px);
+            width: 100%;
+        }
+        /* Loading Overlay styling */
+        #loading {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: cyan; font-size: 24px; z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading">Loading Data...</div>
+
+    <div id="controls-container">
+        <h2>3D Earthquake Monitor</h2>
+
+        <div class="control-group">
+            <label for="size-slider">Marker Size Scale: <span id="size-val">3</span>x</label>
+            <input type="range" id="size-slider" min="1" max="10" step="0.5" value="3">
+        </div>
+
+        <div class="control-group">
+            <label for="depth-slider">Depth Exaggeration: <span id="depth-val">10</span>x</label>
+            <input type="range" id="depth-slider" min="1" max="50" step="1" value="10">
+        </div>
+    </div>
+
+    <div id="chart-container"></div>
+
+
+    <script>
+        // --- Constants & Globals ---
+        const EARTH_RADIUS = 6371;
+        const USGS_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_month.geojson";
+        const BORDERS_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
+
+        // Holders for raw data to avoid re-fetching
+        let rawQuakeData = [];
+        let staticBorderArrays = { x: [], y: [], z: [] };
+        let staticSphereArrays = { x: [], y: [], z: [] };
+
+        // --- Helper Functions ---
+
+        // The exact math equivalent to the Python script
+        function latLonToXYZ(lat, lon, radius) {
+            const latRad = lat * Math.PI / 180;
+            const lonRad = lon * Math.PI / 180;
+            const x = radius * Math.cos(latRad) * Math.cos(lonRad);
+            const y = radius * Math.cos(latRad) * Math.sin(lonRad);
+            const z = radius * Math.sin(latRad);
+            return [x, y, z];
+        }
+
+        // Update slider label text
+        function updateLabels() {
+            document.getElementById('size-val').innerText = document.getElementById('size-slider').value;
+            document.getElementById('depth-val').innerText = document.getElementById('depth-slider').value;
+        }
+
+        // --- Data Processing (Run Once) ---
+
+        function processBorders(geojson) {
+            const bx = [], by = [], bz = [];
+            geojson.features.forEach(feature => {
+                const gType = feature.geometry.type;
+                let coords = feature.geometry.coordinates;
+                // Normalize Polygon vs MultiPolygon structure
+                let polygons = (gType === 'Polygon') ? coords : coords;
+
+                polygons.forEach(poly => {
+                    // Handle nested MultiPolygon structure if necessary
+                    const actualPoly = (gType === 'MultiPolygon') ? poly[0] : poly;
+                    actualPoly.forEach(pt => {
+                        // GeoJSON is [lon, lat]
+                        const [x, y, z] = latLonToXYZ(pt[1], pt[0], EARTH_RADIUS);
+                        bx.push(x); by.push(y); bz.push(z);
+                    });
+                    // Add null to break the line between landmasses (Plotly JS uses null, not None)
+                    bx.push(null); by.push(null); bz.push(null);
+                });
+            });
+            return { x: bx, y: by, z: bz };
+        }
+
+        function generateSphereMesh() {
+            const sx = [], sy = [], sz = [];
+            // Create a 30x30 grid for the sphere mesh
+            for (let i = 0; i <= 30; i++) {
+                const lat = -90 + (180 * i / 30);
+                for (let j = 0; j <= 30; j++) {
+                    const lon = -180 + (360 * j / 30);
+                    const [x, y, z] = latLonToXYZ(lat, lon, EARTH_RADIUS);
+                    sx.push(x); sy.push(y); sz.push(z);
+                }
+            }
+            return { x: sx, y: sy, z: sz };
+        }
+
+
+        // --- Main Application Logic ---
+
+        async function initApp() {
+            try {
+                // 1. Fetch Data concurrently
+                const [quakeRes, borderRes] = await Promise.all([
+                    fetch(USGS_URL),
+                    fetch(BORDERS_URL)
+                ]);
+                const quakeJson = await quakeRes.json();
+                const borderJson = await borderRes.json();
+
+                // 2. Process Static Assets (Borders & Sphere) once
+                staticBorderArrays = processBorders(borderJson);
+                staticSphereArrays = generateSphereMesh();
+
+                // 3. Store Quake Data
+                rawQuakeData = quakeJson.features.map(f => ({
+                    lat: f.geometry.coordinates[1],
+                    lon: f.geometry.coordinates[0],
+                    depth: f.geometry.coordinates[2],
+                    // Handle negative mags here so we don't do it every frame
+                    mag: Math.max(f.properties.mag || 0, 0.1),
+                    place: f.properties.place || "Unknown"
+                }));
+
+                // Hide loader
+                document.getElementById('loading').style.display = 'none';
+
+                // 4. Initial Plot
+                updatePlot();
+
+                // 5. Attach Event Listeners to sliders
+                document.getElementById('size-slider').addEventListener('input', () => {
+                    updateLabels(); updatePlot();
+                });
+                document.getElementById('depth-slider').addEventListener('input', () => {
+                    updateLabels(); updatePlot();
+                });
+
+            } catch (err) {
+                console.error("Error initializing:", err);
+                document.getElementById('loading').innerText = "Error loading data. Check console.";
+            }
+        }
+
+        // --- The "Callback" function ---
+        // Recalculates quake positions based on sliders and redraws
+        function updatePlot() {
+            const sizeScale = parseFloat(document.getElementById('size-slider').value);
+            const depthScale = parseFloat(document.getElementById('depth-slider').value);
+
+            const qx = [], qy = [], qz = [], sizes = [], colors = [], texts = [];
+
+            for (const q of rawQuakeData) {
+                // Calculate exaggerated depth radius
+                const r_quake = EARTH_RADIUS - (q.depth * depthScale);
+                const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
+
+                qx.push(x);
+                qy.push(y);
+                qz.push(z);
+                sizes.push(q.mag * sizeScale);
+                colors.push(q.depth);
+                texts.push(`${q.place}<br>Mag: ${q.mag.toFixed(1)}<br>Depth: ${q.depth}km<br>(Vis Depth: ${(q.depth*depthScale).toFixed(0)}km)`);
+            }
+
+            // Define Traces
+            const sphereTrace = {
+                type: 'mesh3d',
+                x: staticSphereArrays.x, y: staticSphereArrays.y, z: staticSphereArrays.z,
+                alphahull: 0, opacity: 0.1, color: 'black', hoverinfo: 'skip'
+            };
+
+            const borderTrace = {
+                type: 'scatter3d', mode: 'lines',
+                x: staticBorderArrays.x, y: staticBorderArrays.y, z: staticBorderArrays.z,
+                line: { color: 'cyan', width: 1 }, opacity: 0.3, hoverinfo: 'skip'
+            };
+
+            const quakeTrace = {
+                type: 'scatter3d', mode: 'markers',
+                x: qx, y: qy, z: qz,
+                text: texts, hoverinfo: 'text',
+                marker: {
+                    size: sizes,
+                    color: colors,
+                    colorscale: 'Turbo',
+                    cmin: 0, cmax: 700,
+                    colorbar: { title: 'Real Depth (km)', x: 0, thickness: 20, len: 0.5 },
+                    opacity: 0.9, line: { width: 0 }
+                }
+            };
+
+            // Define Layout
+            const layout = {
+                paper_bgcolor: 'black',
+                plot_bgcolor: 'black',
+                margin: { l: 0, r: 0, t: 0, b: 0 },
+                scene: {
+                    xaxis: { visible: false, showbackground: false },
+                    yaxis: { visible: false, showbackground: false },
+                    zaxis: { visible: false, showbackground: false },
+                    aspectmode: 'data',
+                    dragmode: 'orbit',
+                    // Set initial camera angle if it's the first load
+                    camera: document.getElementById('chart-container').data ? undefined : {
+                        eye: { x: 0.6, y: 0.6, z: 0.6 },
+                        center: { x: 0, y: 0, z: 0 }
+                    }
+                },
+                showlegend: false
+            };
+
+            // Use Plotly.react for efficient updates
+            Plotly.react('chart-container', [sphereTrace, borderTrace, quakeTrace], layout, {responsive: true});
+        }
+
+        // Start the app
+        initApp();
+
+    </script>
+</body>
+</html>
