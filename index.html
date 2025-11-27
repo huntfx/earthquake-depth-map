@@ -118,6 +118,9 @@
         // Exponential steps for borders
         const BORDER_WIDTHS = [0, 1, 2, 4, 8, 16];
 
+        // --- ROTATION SETTINGS ---
+        const ROTATION_SPEED = 0.001;
+
         // --- State ---
         let rawQuakeData = [];
         let stats = {
@@ -131,8 +134,8 @@
         let staticBorderArrays = { x: [], y: [], z: [] };
         let staticGridArrays = { x: [], y: [], z: [] };
 
-        // Camera state persistence
-        let currentCamera = null;
+        // Interaction State
+        let autoRotate = true; // Rotates until user clicks/drags/zooms
 
         // --- Math Helpers ---
         function latLonToXYZ(lat, lon, radius) {
@@ -148,10 +151,9 @@
         function processBorders(geojson) {
             const bx = [], by = [], bz = [];
             geojson.features.forEach(feature => {
-                const gType = feature.geometry.type;
-                const polygons = (gType === 'Polygon') ? feature.geometry.coordinates : feature.geometry.coordinates;
+                const polygons = (feature.geometry.type === 'Polygon') ? feature.geometry.coordinates : feature.geometry.coordinates;
                 polygons.forEach(poly => {
-                    const actualPoly = (gType === 'MultiPolygon') ? poly[0] : poly;
+                    const actualPoly = (feature.geometry.type === 'MultiPolygon') ? poly[0] : poly;
                     actualPoly.forEach(pt => {
                         const [x, y, z] = latLonToXYZ(pt[1], pt[0], EARTH_RADIUS);
                         bx.push(x); by.push(y); bz.push(z);
@@ -182,12 +184,11 @@
         }
 
         // --- Main App Logic ---
-
         async function initApp() {
             try {
                 console.log("Starting application...");
 
-                // 1. Force Reset Sliders/Selects to new defaults
+                // Defaults
                 document.getElementById('size-slider').value = "2.5";
                 document.getElementById('mag-slider').value = "0.1";
                 document.getElementById('depth-slider').value = "2.5";
@@ -196,26 +197,23 @@
                 document.getElementById('color-mode').value = "mag";
                 updateLabels();
 
-                // 2. Fetch Data
-                console.log("Downloading data from USGS and GitHub...");
+                // Fetch
+                console.log("Downloading data...");
                 const [quakeRes, borderRes] = await Promise.all([
                     fetch(USGS_URL),
                     fetch(BORDERS_URL)
                 ]);
 
-                console.log("Data downloaded. Parsing JSON...");
                 const quakeJson = await quakeRes.json();
                 const borderJson = await borderRes.json();
 
                 staticBorderArrays = processBorders(borderJson);
                 staticGridArrays = generateWireframeGrid();
 
-                // 3. Process Stats
-                let minT = Infinity;
-                let maxT = -Infinity;
-                let totalVisualMag = 0;
-                let totalRealMag = 0; // Accumulated actual magnitude from source
-                let count = 0;
+                // Process Stats
+                let minT = Infinity, maxT = -Infinity;
+                let totalMag = 0, count = 0;
+                let totalRealMag = 0;
 
                 rawQuakeData = quakeJson.features.map(f => {
                     const realMag = f.properties.mag || 0;
@@ -228,7 +226,7 @@
                     if (time < minT) minT = time;
                     if (time > maxT) maxT = time;
 
-                    totalVisualMag += visualMag;
+                    totalMag += visualMag;
                     totalRealMag += realMag;
                     count++;
 
@@ -236,61 +234,85 @@
                         lat: f.geometry.coordinates[1],
                         lon: f.geometry.coordinates[0],
                         depth: depth,
-                        mag: visualMag, // Visual
-                        realMag: realMag, // Tooltip
+                        mag: visualMag,
+                        realMag: realMag,
                         time: time,
                         place: f.properties.place || "Unknown"
                     };
                 });
 
-                // Calculate Visual Mean (for Hinge Logic)
-                stats.avgMag = count > 0 ? (totalVisualMag / count) : 0;
-
-                // Calculate Real Mean (for Console Log)
+                stats.avgMag = count > 0 ? (totalMag / count) : 0;
                 const realAvgMag = count > 0 ? (totalRealMag / count) : 0;
-
                 stats.minTime = minT;
                 stats.maxTime = maxT;
 
-                // --- CONSOLE LOGGING ---
+                // Console Log
                 console.log("--- DATA REPORT ---");
                 console.log(`Total Earthquakes: ${count}`);
                 console.log(`Average Magnitude: ${realAvgMag.toFixed(3)}`);
-                console.log(`Maximum Magnitude: ${stats.maxMag.toFixed(2)}`);
-                console.log(`Maximum Depth: ${stats.maxDepth} km`);
-                console.log(`Earliest Date: ${new Date(stats.minTime).toISOString()}`);
-                console.log(`Latest Date:   ${new Date(stats.maxTime).toISOString()}`);
                 console.log("-------------------");
 
-                // Update UI Overlay (Clean)
                 document.getElementById('info-overlay').innerText =
-                    `Data: ${count} earthquakes (30 Days). Avg Mag (Visual): ${stats.avgMag.toFixed(2)}. Source: USGS.`;
-
+                    `Data: ${count} earthquakes (30 Days). Source: USGS.`;
                 document.getElementById('loading').style.display = 'none';
 
-                // 4. Attach Listeners
+                // Listeners
                 const inputs = ['size-slider', 'mag-slider', 'depth-slider', 'border-slider'];
                 inputs.forEach(id => {
                     document.getElementById(id).addEventListener('input', () => { updateLabels(); updatePlot(); });
                 });
-
                 document.getElementById('color-select').addEventListener('change', () => updatePlot());
                 document.getElementById('color-mode').addEventListener('change', () => updatePlot());
 
-                // 5. Initial Draw
+                // Initial Draw
                 updatePlot(true);
 
-                // 6. Camera Tracker
-                document.getElementById('chart-container').on('plotly_relayout', function(eventdata){
-                     if(eventdata['scene.camera']) {
-                        currentCamera = eventdata['scene.camera'];
-                     }
-                });
+                // --- INTERACTION LOGIC (Stop on Click/Touch/Zoom) ---
+                const graphDiv = document.getElementById('chart-container');
+
+                const stopRotation = () => {
+                    autoRotate = false;
+                };
+
+                // Stop on Click/Drag
+                graphDiv.addEventListener('mousedown', stopRotation);
+                graphDiv.addEventListener('touchstart', stopRotation);
+                // Stop on Zoom (Wheel) - Prevents snap back
+                graphDiv.addEventListener('wheel', stopRotation);
+
+                // Start Animation Loop
+                requestAnimationFrame(animateGlobe);
 
             } catch (err) {
                 console.error("Critical Error:", err);
                 document.getElementById('loading').innerText = "Error loading data.";
             }
+        }
+
+        function animateGlobe() {
+            if (autoRotate) {
+                const graphDiv = document.getElementById('chart-container');
+
+                // Get the LIVE camera from Plotly's internal layout
+                const scene = graphDiv._fullLayout ? graphDiv._fullLayout.scene : null;
+
+                if (scene && scene.camera) {
+                    const eye = scene.camera.eye;
+
+                    // Rotate Math (Around Z axis)
+                    const cos = Math.cos(ROTATION_SPEED);
+                    const sin = Math.sin(ROTATION_SPEED);
+
+                    const newX = eye.x * cos - eye.y * sin;
+                    const newY = eye.x * sin + eye.y * cos;
+
+                    // Apply rotation. This respects current Z (zoom level) logic from previous frame.
+                    Plotly.relayout('chart-container', {
+                        'scene.camera.eye': { x: newX, y: newY, z: eye.z }
+                    });
+                }
+            }
+            requestAnimationFrame(animateGlobe);
         }
 
         function updateLabels() {
@@ -302,8 +324,35 @@
             document.getElementById('border-val').innerText = BORDER_WIDTHS[bIndex];
         }
 
+        function calculateResponsiveCamera() {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const aspectRatio = width / height;
+
+            // BASE DISTANCE (How close do you want it on a nice wide monitor?)
+            // 0.9 = Very Close (Fills height)
+            const baseDistance = 0.9;
+
+            let finalDistance;
+
+            if (aspectRatio >= 1) {
+                // LANDSCAPE: Height is the constraint.
+                // Distance is fixed because vertical FOV is usually fixed.
+                finalDistance = baseDistance;
+            } else {
+                // PORTRAIT: Width is the constraint.
+                // We need to pull back proportional to how skinny the screen is.
+                // Formula: base / aspect_ratio
+                finalDistance = baseDistance / aspectRatio;
+            }
+
+            return {
+                eye: { x: finalDistance, y: finalDistance, z: finalDistance * 0.5 },
+                center: { x: 0, y: 0, z: 0 }
+            };
+        }
+
         function updatePlot(isInitial = false) {
-            // Inputs
             const baseSize = parseFloat(document.getElementById('size-slider').value);
             const magBonusScale = parseFloat(document.getElementById('mag-slider').value);
             const depthScale = parseFloat(document.getElementById('depth-slider').value);
@@ -313,40 +362,26 @@
             const colorMode = document.getElementById('color-mode').value;
 
             const qx = [], qy = [], qz = [], sizes = [], ghostSizes = [], colors = [], texts = [];
-
-            // Hinge Midpoint = Average Magnitude (Visual)
             const MIDPOINT = stats.avgMag;
 
             for (const q of rawQuakeData) {
-                // 1. Position
                 const r_quake = EARTH_RADIUS - (q.depth * depthScale);
                 const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
-
                 qx.push(x); qy.push(y); qz.push(z);
 
-                // 2. Size Logic
                 let sizeFactor = q.mag;
                 if (q.mag > MIDPOINT) {
                     const diff = q.mag - MIDPOINT;
                     sizeFactor += (Math.pow(diff, 3) * magBonusScale);
                 }
-
                 const s = baseSize * (sizeFactor / 2.5);
                 sizes.push(s);
-
-                // Ghost size logic
                 ghostSizes.push(Math.max(s, 10));
 
-                // 3. Colour Logic
-                if (colorMode === 'depth') {
-                    colors.push(q.depth);
-                } else if (colorMode === 'mag') {
-                    colors.push(q.mag);
-                } else {
-                    colors.push(q.time);
-                }
+                if (colorMode === 'depth') colors.push(q.depth);
+                else if (colorMode === 'mag') colors.push(q.mag);
+                else colors.push(q.time);
 
-                // 4. Hover Text
                 const dateStr = new Date(q.time).toLocaleDateString();
                 texts.push(
                     `<b>${q.place}</b><br>` +
@@ -356,13 +391,9 @@
                 );
             }
 
-            // Color Settings
             let colorSettings = {
                 colorscale: selectedPalette,
-                colorbar: {
-                    x: 0, len: 0.5, thickness: 15,
-                    titlefont: {color: 'white'}, tickfont: {color: 'white'}
-                }
+                colorbar: { x: 0, len: 0.5, thickness: 15, titlefont: {color: 'white'}, tickfont: {color: 'white'} }
             };
 
             if (colorMode === 'depth') {
@@ -382,46 +413,32 @@
             const gridTrace = {
                 type: 'scatter3d', mode: 'lines',
                 x: staticGridArrays.x, y: staticGridArrays.y, z: staticGridArrays.z,
-                line: { color: '#333', width: 1 },
-                opacity: 0.5, hoverinfo: 'skip'
+                line: { color: '#333', width: 1 }, opacity: 0.5, hoverinfo: 'skip'
             };
 
             const borderTrace = {
                 type: 'scatter3d', mode: 'lines',
                 x: staticBorderArrays.x, y: staticBorderArrays.y, z: staticBorderArrays.z,
-                line: { color: '#00ffff', width: borderWidth },
-                opacity: 0.4, hoverinfo: 'skip',
+                line: { color: '#00ffff', width: borderWidth }, opacity: 0.4, hoverinfo: 'skip',
                 visible: borderWidth > 0
             };
 
-            // TRACE 1: VISUAL (Small, beautiful, non-interactive)
             const quakeTrace = {
                 type: 'scatter3d', mode: 'markers',
                 x: qx, y: qy, z: qz,
                 hoverinfo: 'skip',
                 marker: {
-                    size: sizes,
-                    color: colors,
-                    colorscale: colorSettings.colorscale,
-                    cmin: colorSettings.cmin,
-                    cmax: colorSettings.cmax,
-                    colorbar: colorSettings.colorbar,
-                    opacity: 1.0,
-                    line: { width: 0 }
+                    size: sizes, color: colors,
+                    colorscale: colorSettings.colorscale, cmin: colorSettings.cmin, cmax: colorSettings.cmax,
+                    colorbar: colorSettings.colorbar, opacity: 1.0, line: { width: 0 }
                 }
             };
 
-            // TRACE 2: GHOST (Invisible, Interactive, Minimum 10px)
             const ghostTrace = {
                 type: 'scatter3d', mode: 'markers',
                 x: qx, y: qy, z: qz,
-                text: texts,
-                hoverinfo: 'text',
-                marker: {
-                    size: ghostSizes,
-                    color: 'rgba(0,0,0,0)',
-                    opacity: 0.0,
-                }
+                text: texts, hoverinfo: 'text',
+                marker: { size: ghostSizes, color: 'rgba(0,0,0,0)', opacity: 0.0 }
             };
 
             const layout = {
@@ -433,14 +450,18 @@
                     yaxis: { visible: false, showbackground: false },
                     zaxis: { visible: false, showbackground: false },
                     aspectmode: 'data',
-                    dragmode: 'orbit',
-                    camera: currentCamera ? currentCamera : {
-                        eye: { x: 0.8, y: 0.8, z: 0.8 },
-                        center: { x: 0, y: 0, z: 0 }
-                    }
+                    dragmode: 'orbit'
                 },
                 showlegend: false
             };
+
+            // Calculate Responsive Zoom
+            if(isInitial) {
+                layout.scene.camera = calculateResponsiveCamera();
+            }
+
+            // Using uirevision to prevent resets on data updates
+            layout.uirevision = 'true';
 
             Plotly.react('chart-container', [gridTrace, borderTrace, quakeTrace, ghostTrace], layout, {responsive: true});
         }
