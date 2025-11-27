@@ -67,8 +67,8 @@
         <div class="control-group" style="width: 100px;">
             <label>Palette</label>
             <select id="color-select">
-                <option value="YlGnBu" selected>YlGnBu</option>
-                <option value="Hot">Hot</option>
+                <option value="Hot" selected>Hot</option>
+                <option value="YlGnBu">YlGnBu</option>
                 <option value="Rainbow">Rainbow</option>
                 <option value="YlOrRd">YlOrRd</option>
                 <option value="Greys">Greys</option>
@@ -86,18 +86,18 @@
         </div>
 
         <div class="control-group">
-            <label>Point Size: <span id="size-val" class="val">2.0</span></label>
+            <label>Point Size: <span id="size-val" class="val">2.5</span></label>
             <input type="range" id="size-slider" min="0.5" max="5.0" step="0.5">
         </div>
 
         <div class="control-group">
-            <label>Mag Bonus: <span id="mag-val" class="val">0.0</span></label>
-            <input type="range" id="mag-slider" min="0" max="2" step="0.1" value="0">
+            <label>Mag Bonus: <span id="mag-val" class="val">0.1</span></label>
+            <input type="range" id="mag-slider" min="0" max="1" step="0.01">
         </div>
 
         <div class="control-group">
-            <label>Depth Scale: <span id="depth-val" class="val">1.0</span></label>
-            <input type="range" id="depth-slider" min="1" max="10" step="0.1">
+            <label>Depth Scale: <span id="depth-val" class="val">2.5</span></label>
+            <input type="range" id="depth-slider" min="1" max="5" step="0.1">
         </div>
 
         <div class="control-group" style="width: 80px;">
@@ -125,6 +125,7 @@
             maxDepth: 0,
             minTime: 0,
             maxTime: 0,
+            avgMag: 0
         };
 
         let staticBorderArrays = { x: [], y: [], z: [] };
@@ -184,12 +185,12 @@
 
         async function initApp() {
             try {
-                // 1. Force Reset Sliders/Selects
-                document.getElementById('size-slider').value = "2.0";
-                document.getElementById('mag-slider').value = "0.0";
-                document.getElementById('depth-slider').value = "1.0";
+                // 1. Force Reset Sliders/Selects to new defaults
+                document.getElementById('size-slider').value = "2.5";
+                document.getElementById('mag-slider').value = "0.1";
+                document.getElementById('depth-slider').value = "2.5";
                 document.getElementById('border-slider').value = "1";
-                document.getElementById('color-select').value = "YlGnBu";
+                document.getElementById('color-select').value = "Hot";
                 document.getElementById('color-mode').value = "depth";
                 updateLabels();
 
@@ -207,8 +208,11 @@
                 // 3. Process Stats
                 let minT = Infinity;
                 let maxT = -Infinity;
+                let totalMag = 0;
+                let count = 0;
 
                 rawQuakeData = quakeJson.features.map(f => {
+                    // Sanitization: min 0.1
                     const mag = Math.max(f.properties.mag || 0, 0.1);
                     const depth = f.geometry.coordinates[2];
                     const time = f.properties.time;
@@ -217,6 +221,9 @@
                     if (depth > stats.maxDepth) stats.maxDepth = depth;
                     if (time < minT) minT = time;
                     if (time > maxT) maxT = time;
+
+                    totalMag += mag;
+                    count++;
 
                     return {
                         lat: f.geometry.coordinates[1],
@@ -228,11 +235,14 @@
                     };
                 });
 
+                // Calculate Mean (Average) Magnitude
+                stats.avgMag = count > 0 ? (totalMag / count) : 0;
+
                 stats.minTime = minT;
                 stats.maxTime = maxT;
 
                 document.getElementById('info-overlay').innerText =
-                    `Data: ${rawQuakeData.length} earthquakes (30 Days). Source: USGS.`;
+                    `Data: ${count} earthquakes (30 Days). Avg Mag: ${stats.avgMag.toFixed(2)}. Source: USGS.`;
 
                 document.getElementById('loading').style.display = 'none';
 
@@ -248,7 +258,7 @@
                 // 5. Initial Draw
                 updatePlot(true);
 
-                // 6. Camera Tracker: Listen for camera movement and save it
+                // 6. Camera Tracker
                 document.getElementById('chart-container').on('plotly_relayout', function(eventdata){
                      if(eventdata['scene.camera']) {
                         currentCamera = eventdata['scene.camera'];
@@ -263,7 +273,8 @@
 
         function updateLabels() {
             document.getElementById('size-val').innerText = parseFloat(document.getElementById('size-slider').value).toFixed(1);
-            document.getElementById('mag-val').innerText = parseFloat(document.getElementById('mag-slider').value).toFixed(1);
+            // Show 2 decimals for Mag Bonus since step is 0.01
+            document.getElementById('mag-val').innerText = parseFloat(document.getElementById('mag-slider').value).toFixed(2);
             document.getElementById('depth-val').innerText = parseFloat(document.getElementById('depth-slider').value).toFixed(1);
 
             const bIndex = parseInt(document.getElementById('border-slider').value);
@@ -271,6 +282,7 @@
         }
 
         function updatePlot(isInitial = false) {
+            // Inputs
             const baseSize = parseFloat(document.getElementById('size-slider').value);
             const magBonusScale = parseFloat(document.getElementById('mag-slider').value);
             const depthScale = parseFloat(document.getElementById('depth-slider').value);
@@ -281,8 +293,8 @@
 
             const qx = [], qy = [], qz = [], sizes = [], colors = [], texts = [];
 
-            // Hinge Midpoint
-            const MIDPOINT = 4.0;
+            // Hinge Midpoint = Average Magnitude
+            const MIDPOINT = stats.avgMag;
 
             for (const q of rawQuakeData) {
                 // 1. Position
@@ -292,6 +304,8 @@
                 qx.push(x); qy.push(y); qz.push(z);
 
                 // 2. Size Logic (Threshold Hinge)
+                // If Mag <= Avg, size is proportional to mag (Linear)
+                // If Mag > Avg, add exponential bonus
                 let sizeFactor = q.mag;
                 if (q.mag > MIDPOINT) {
                     const diff = q.mag - MIDPOINT;
@@ -299,6 +313,7 @@
                 }
 
                 // Apply Base Scale
+                // Normalized division to keep visual sizes reasonable
                 const s = baseSize * (sizeFactor / 2.5);
                 sizes.push(s);
 
@@ -376,6 +391,7 @@
                 }
             };
 
+            // Layout
             const layout = {
                 paper_bgcolor: 'black', plot_bgcolor: 'black',
                 margin: { l: 0, r: 0, t: 0, b: 0 },
