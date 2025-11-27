@@ -185,6 +185,8 @@
 
         async function initApp() {
             try {
+                console.log("Starting application...");
+
                 // 1. Force Reset Sliders/Selects to new defaults
                 document.getElementById('size-slider').value = "2.5";
                 document.getElementById('mag-slider').value = "0.1";
@@ -195,10 +197,13 @@
                 updateLabels();
 
                 // 2. Fetch Data
+                console.log("Downloading data from USGS and GitHub...");
                 const [quakeRes, borderRes] = await Promise.all([
                     fetch(USGS_URL),
                     fetch(BORDERS_URL)
                 ]);
+
+                console.log("Data downloaded. Parsing JSON...");
                 const quakeJson = await quakeRes.json();
                 const borderJson = await borderRes.json();
 
@@ -208,7 +213,8 @@
                 // 3. Process Stats
                 let minT = Infinity;
                 let maxT = -Infinity;
-                let totalMag = 0;
+                let totalVisualMag = 0;
+                let totalRealMag = 0; // Accumulated actual magnitude from source
                 let count = 0;
 
                 rawQuakeData = quakeJson.features.map(f => {
@@ -222,7 +228,8 @@
                     if (time < minT) minT = time;
                     if (time > maxT) maxT = time;
 
-                    totalMag += visualMag;
+                    totalVisualMag += visualMag;
+                    totalRealMag += realMag;
                     count++;
 
                     return {
@@ -236,14 +243,28 @@
                     };
                 });
 
-                // Calculate Mean Magnitude (on clamped values)
-                stats.avgMag = count > 0 ? (totalMag / count) : 0;
+                // Calculate Visual Mean (for Hinge Logic)
+                stats.avgMag = count > 0 ? (totalVisualMag / count) : 0;
+
+                // Calculate Real Mean (for Console Log)
+                const realAvgMag = count > 0 ? (totalRealMag / count) : 0;
 
                 stats.minTime = minT;
                 stats.maxTime = maxT;
 
+                // --- CONSOLE LOGGING ---
+                console.log("--- DATA REPORT ---");
+                console.log(`Total Earthquakes: ${count}`);
+                console.log(`Average Magnitude: ${realAvgMag.toFixed(3)}`);
+                console.log(`Maximum Magnitude: ${stats.maxMag.toFixed(2)}`);
+                console.log(`Maximum Depth: ${stats.maxDepth} km`);
+                console.log(`Earliest Date: ${new Date(stats.minTime).toISOString()}`);
+                console.log(`Latest Date:   ${new Date(stats.maxTime).toISOString()}`);
+                console.log("-------------------");
+
+                // Update UI Overlay (Clean)
                 document.getElementById('info-overlay').innerText =
-                    `Data: ${count} earthquakes (30 Days). Avg Mag: ${stats.avgMag.toFixed(2)}. Source: USGS.`;
+                    `Data: ${count} earthquakes (30 Days). Avg Mag (Visual): ${stats.avgMag.toFixed(2)}. Source: USGS.`;
 
                 document.getElementById('loading').style.display = 'none';
 
@@ -267,7 +288,7 @@
                 });
 
             } catch (err) {
-                console.error(err);
+                console.error("Critical Error:", err);
                 document.getElementById('loading').innerText = "Error loading data.";
             }
         }
@@ -293,7 +314,7 @@
 
             const qx = [], qy = [], qz = [], sizes = [], ghostSizes = [], colors = [], texts = [];
 
-            // Hinge Midpoint = Average Magnitude
+            // Hinge Midpoint = Average Magnitude (Visual)
             const MIDPOINT = stats.avgMag;
 
             for (const q of rawQuakeData) {
@@ -313,7 +334,7 @@
                 const s = baseSize * (sizeFactor / 2.5);
                 sizes.push(s);
 
-                // Ghost size logic: Ensure tiny dots have at least a 10px click area
+                // Ghost size logic
                 ghostSizes.push(Math.max(s, 10));
 
                 // 3. Colour Logic
