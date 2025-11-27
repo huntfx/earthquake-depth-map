@@ -26,7 +26,7 @@
 
         h2 { margin: 0; font-size: 18px; color: cyan; margin-right: 10px; }
 
-        .control-group { display: flex; flex-direction: column; width: 160px; }
+        .control-group { display: flex; flex-direction: column; width: 150px; }
 
         label { font-size: 11px; margin-bottom: 5px; color: #aaa; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;}
         span.val { color: white; float: right; }
@@ -36,7 +36,6 @@
             height: 4px; background: #444; border-radius: 2px;
         }
 
-        /* Radio Button Styling */
         .radio-container { display: flex; gap: 10px; font-size: 12px; }
         .radio-item { display: flex; align-items: center; cursor: pointer; }
         .radio-item input { margin-right: 5px; accent-color: cyan; }
@@ -60,28 +59,24 @@
         <div class="control-group" style="width: 140px;">
             <label>Color Scheme:</label>
             <div class="radio-container">
-                <label class="radio-item">
-                    <input type="radio" name="color-mode" value="depth" checked> Depth
-                </label>
-                <label class="radio-item">
-                    <input type="radio" name="color-mode" value="mag"> Mag
-                </label>
+                <label class="radio-item"><input type="radio" name="color-mode" value="depth" checked> Depth</label>
+                <label class="radio-item"><input type="radio" name="color-mode" value="mag"> Mag</label>
             </div>
         </div>
 
         <div class="control-group">
-            <label>Base Size: <span id="size-val" class="val">1.0</span></label>
-            <input type="range" id="size-slider" min="0.1" max="2.0" step="0.1" value="1.0">
+            <label>Base Scale: <span id="size-val" class="val">2.0</span></label>
+            <input type="range" id="size-slider" min="0.5" max="5.0" step="0.5" value="2.0">
         </div>
 
         <div class="control-group">
-            <label>Mag Exponent: <span id="exp-val" class="val">1.5</span></label>
-            <input type="range" id="exp-slider" min="1" max="4" step="0.1" value="1.5">
+            <label>Magnitude Scale: <span id="exp-val" class="val">1.0</span></label>
+            <input type="range" id="exp-slider" min="0" max="4" step="0.1" value="1.0">
         </div>
 
         <div class="control-group">
-            <label>Depth Exaggeration: <span id="depth-val" class="val">1</span>x</label>
-            <input type="range" id="depth-slider" min="1" max="5" step="1" value="1">
+            <label>Depth Scale: <span id="depth-val" class="val">2</span>x</label>
+            <input type="range" id="depth-slider" min="1" max="10" step="1" value="2">
         </div>
     </div>
 
@@ -90,16 +85,15 @@
     <script>
         // --- Constants ---
         const EARTH_RADIUS = 6371;
-        // Radius for the visual sphere (smaller than calc radius to fix hover issues)
-        const VISUAL_SPHERE_RADIUS = EARTH_RADIUS - 50;
-
         const USGS_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_month.geojson";
         const BORDERS_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
 
         // --- State ---
         let rawQuakeData = [];
+        let stats = { maxMag: 0, maxDepth: 0, avgMag: 0 };
+
         let staticBorderArrays = { x: [], y: [], z: [] };
-        let staticSphereArrays = { x: [], y: [], z: [] };
+        let staticGridArrays = { x: [], y: [], z: [] };
 
         // --- Math Helpers ---
         function latLonToXYZ(lat, lon, radius) {
@@ -111,18 +105,18 @@
             return [x, y, z];
         }
 
-        // --- Data Processors ---
+        // --- Data Generators ---
+
+        // 1. Process Country Borders
         function processBorders(geojson) {
             const bx = [], by = [], bz = [];
             geojson.features.forEach(feature => {
                 const gType = feature.geometry.type;
                 const polygons = (gType === 'Polygon') ? feature.geometry.coordinates : feature.geometry.coordinates;
-
                 polygons.forEach(poly => {
                     const actualPoly = (gType === 'MultiPolygon') ? poly[0] : poly;
                     actualPoly.forEach(pt => {
-                        // Borders are drawn slightly above visual sphere but below quakes
-                        const [x, y, z] = latLonToXYZ(pt[1], pt[0], VISUAL_SPHERE_RADIUS + 10);
+                        const [x, y, z] = latLonToXYZ(pt[1], pt[0], EARTH_RADIUS);
                         bx.push(x); by.push(y); bz.push(z);
                     });
                     bx.push(null); by.push(null); bz.push(null);
@@ -131,20 +125,32 @@
             return { x: bx, y: by, z: bz };
         }
 
-        function generateSphereMesh() {
-            const sx = [], sy = [], sz = [];
-            for (let i = 0; i <= 40; i++) {
-                const lat = -90 + (180 * i / 40);
-                for (let j = 0; j <= 40; j++) {
-                    const lon = -180 + (360 * j / 40);
-                    const [x, y, z] = latLonToXYZ(lat, lon, VISUAL_SPHERE_RADIUS);
-                    sx.push(x); sy.push(y); sz.push(z);
+        // 2. Generate Wireframe Grid (Replaces the solid sphere)
+        function generateWireframeGrid() {
+            const gx = [], gy = [], gz = [];
+
+            // Latitude Rings (every 15 degrees)
+            for (let lat = -90; lat <= 90; lat += 15) {
+                for (let lon = -180; lon <= 180; lon += 5) {
+                    const [x, y, z] = latLonToXYZ(lat, lon, EARTH_RADIUS);
+                    gx.push(x); gy.push(y); gz.push(z);
                 }
+                gx.push(null); gy.push(null); gz.push(null); // Break line
             }
-            return { x: sx, y: sy, z: sz };
+
+            // Longitude Lines (every 30 degrees)
+            for (let lon = -180; lon <= 180; lon += 30) {
+                for (let lat = -90; lat <= 90; lat += 5) {
+                    const [x, y, z] = latLonToXYZ(lat, lon, EARTH_RADIUS);
+                    gx.push(x); gy.push(y); gz.push(z);
+                }
+                gx.push(null); gy.push(null); gz.push(null); // Break line
+            }
+            return { x: gx, y: gy, z: gz };
         }
 
-        // --- Main Logic ---
+        // --- Main App Logic ---
+
         async function initApp() {
             try {
                 const [quakeRes, borderRes] = await Promise.all([
@@ -155,19 +161,38 @@
                 const borderJson = await borderRes.json();
 
                 staticBorderArrays = processBorders(borderJson);
-                staticSphereArrays = generateSphereMesh();
+                staticGridArrays = generateWireframeGrid();
 
-                rawQuakeData = quakeJson.features.map(f => ({
-                    lat: f.geometry.coordinates[1],
-                    lon: f.geometry.coordinates[0],
-                    depth: f.geometry.coordinates[2],
-                    mag: Math.max(f.properties.mag || 0, 0.1),
-                    place: f.properties.place || "Unknown"
-                }));
+                // Process Data & Calculate Dynamic Stats
+                let totalMag = 0;
+                let validCount = 0;
+
+                rawQuakeData = quakeJson.features.map(f => {
+                    const mag = Math.max(f.properties.mag || 0, 0.1);
+                    const depth = f.geometry.coordinates[2];
+
+                    // Update Max Stats
+                    if (mag > stats.maxMag) stats.maxMag = mag;
+                    if (depth > stats.maxDepth) stats.maxDepth = depth;
+
+                    totalMag += mag;
+                    validCount++;
+
+                    return {
+                        lat: f.geometry.coordinates[1],
+                        lon: f.geometry.coordinates[0],
+                        depth: depth,
+                        mag: mag,
+                        place: f.properties.place || "Unknown"
+                    };
+                });
+
+                stats.avgMag = validCount > 0 ? (totalMag / validCount) : 1;
+                console.log("Stats Calculated:", stats);
 
                 document.getElementById('loading').style.display = 'none';
 
-                // Add Slider Listeners
+                // Event Listeners
                 ['size-slider', 'depth-slider', 'exp-slider'].forEach(id => {
                     document.getElementById(id).addEventListener('input', () => {
                         updateLabels();
@@ -175,13 +200,10 @@
                     });
                 });
 
-                // Add Radio Listener
                 const radios = document.querySelectorAll('input[name="color-mode"]');
-                radios.forEach(radio => {
-                    radio.addEventListener('change', () => updatePlot());
-                });
+                radios.forEach(radio => radio.addEventListener('change', () => updatePlot()));
 
-                updatePlot(true); // true = initial load
+                updatePlot(true);
 
             } catch (err) {
                 console.error(err);
@@ -196,35 +218,30 @@
         }
 
         function updatePlot(isInitial = false) {
-            const baseSize = parseFloat(document.getElementById('size-slider').value);
+            const baseScale = parseFloat(document.getElementById('size-slider').value);
+            const magScale = parseFloat(document.getElementById('exp-slider').value);
             const depthScale = parseFloat(document.getElementById('depth-slider').value);
-            const exponent = parseFloat(document.getElementById('exp-slider').value);
             const colorMode = document.querySelector('input[name="color-mode"]:checked').value;
 
             const qx = [], qy = [], qz = [], sizes = [], colors = [], texts = [];
 
             for (const q of rawQuakeData) {
-                // Depth Calculation
-                // We use EARTH_RADIUS for the top, but subtract depth.
-                // Since the visual sphere is smaller (EARTH_RADIUS - 50), shallow quakes
-                // will float 50km above the black sphere mesh, making them easy to click.
+                // 1. Depth Calculation
                 const r_quake = EARTH_RADIUS - (q.depth * depthScale);
                 const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
 
                 qx.push(x); qy.push(y); qz.push(z);
 
-                // Size Math
-                const s = baseSize * Math.pow(q.mag, exponent);
+                // 2. New Size Math (Centered on Average)
+                // Ratio: (Mag / AvgMag) ^ Scale
+                const ratio = Math.pow((q.mag / stats.avgMag), magScale);
+                const s = baseScale * ratio * 2; // *2 is a visual multiplier for Plotly pixels
                 sizes.push(s);
 
-                // Color Logic
-                if (colorMode === 'depth') {
-                    colors.push(q.depth);
-                } else {
-                    colors.push(q.mag);
-                }
+                // 3. Colors
+                colors.push(colorMode === 'depth' ? q.depth : q.mag);
 
-                // Hover Text
+                // 4. Tooltips
                 texts.push(
                     `<b>${q.place}</b><br>` +
                     `Magnitude: ${q.mag.toFixed(1)}<br>` +
@@ -233,36 +250,46 @@
                 );
             }
 
-            // Determine Colorbar Settings based on Mode
+            // --- Dynamic Color Settings ---
             let colorSettings = {};
             if (colorMode === 'depth') {
                 colorSettings = {
                     title: 'Depth (km)',
-                    cmin: 0, cmax: 700,
+                    cmin: 0,
+                    cmax: stats.maxDepth, // Dynamic Max
                     colorscale: 'Rainbow',
                     reversescale: false
                 };
             } else {
                 colorSettings = {
                     title: 'Magnitude',
-                    cmin: 0, cmax: 9, // Standard range for Mag
+                    cmin: 0,
+                    cmax: stats.maxMag, // Dynamic Max
                     colorscale: 'Rainbow',
                     reversescale: false
                 };
             }
 
-            const sphereTrace = {
-                type: 'mesh3d',
-                x: staticSphereArrays.x, y: staticSphereArrays.y, z: staticSphereArrays.z,
-                alphahull: 0, opacity: 0.15, color: 'black', hoverinfo: 'skip'
+            // TRACE 1: Wireframe Grid (Replaces transparent sphere)
+            // This is 'lines' mode, which allows clicks to pass through gaps!
+            const gridTrace = {
+                type: 'scatter3d', mode: 'lines',
+                x: staticGridArrays.x, y: staticGridArrays.y, z: staticGridArrays.z,
+                line: { color: '#333', width: 1 },
+                opacity: 0.5,
+                hoverinfo: 'skip'
             };
 
+            // TRACE 2: Country Borders
             const borderTrace = {
                 type: 'scatter3d', mode: 'lines',
                 x: staticBorderArrays.x, y: staticBorderArrays.y, z: staticBorderArrays.z,
-                line: { color: '#00ffff', width: 1 }, opacity: 0.4, hoverinfo: 'skip'
+                line: { color: '#00ffff', width: 1 },
+                opacity: 0.4,
+                hoverinfo: 'skip'
             };
 
+            // TRACE 3: Earthquakes
             const quakeTrace = {
                 type: 'scatter3d', mode: 'markers',
                 x: qx, y: qy, z: qz,
@@ -274,7 +301,6 @@
                     colorscale: colorSettings.colorscale,
                     cmin: colorSettings.cmin,
                     cmax: colorSettings.cmax,
-                    reversescale: colorSettings.reversescale,
                     colorbar: {
                         title: colorSettings.title,
                         x: 0,
@@ -283,7 +309,7 @@
                         titlefont: {color: 'white'},
                         tickfont: {color: 'white'}
                     },
-                    opacity: 1.0, // Fully opaque to help with hover detection
+                    opacity: 1.0,
                     line: { width: 0 }
                 }
             };
@@ -292,7 +318,7 @@
                 paper_bgcolor: 'black',
                 plot_bgcolor: 'black',
                 margin: { l: 0, r: 0, t: 0, b: 0 },
-                hovermode: 'closest', // Important for 3D hover
+                hovermode: 'closest',
                 scene: {
                     xaxis: { visible: false, showbackground: false },
                     yaxis: { visible: false, showbackground: false },
@@ -307,7 +333,8 @@
                 showlegend: false
             };
 
-            Plotly.react('chart-container', [sphereTrace, borderTrace, quakeTrace], layout, {responsive: true});
+            // Use 'gridTrace' instead of 'sphereTrace'
+            Plotly.react('chart-container', [gridTrace, borderTrace, quakeTrace], layout, {responsive: true});
         }
 
         initApp();
