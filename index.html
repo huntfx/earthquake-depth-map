@@ -9,26 +9,53 @@
     <style>
         body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-family: sans-serif; overflow: hidden; }
 
-        #controls-container {
-            background-color: #1a1a1a;
-            padding: 10px 20px;
-            color: #eee;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.8);
+        /* --- MENU BUTTON --- */
+        #menu-btn {
+            position: absolute; top: 15px; left: 15px;
+            background: rgba(0, 0, 0, 0.6);
+            color: cyan;
+            border: 1px solid cyan;
+            border-radius: 4px;
+            font-size: 20px;
+            padding: 5px 12px;
+            cursor: pointer;
+            z-index: 1001;
+            transition: all 0.2s;
+        }
+        #menu-btn:hover { background: rgba(0, 255, 255, 0.2); }
+
+        /* --- SIDE PANEL --- */
+        #side-panel {
+            position: fixed;
+            top: 0; left: -320px;
+            width: 280px;
+            height: 100%;
+            background: rgba(20, 20, 20, 0.95);
+            border-right: 1px solid #333;
+            box-shadow: 2px 0 15px rgba(0,0,0,0.8);
+            z-index: 1002;
+            transition: left 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+            overflow-y: auto;
             display: flex;
-            gap: 15px;
-            align-items: center;
-            justify-content: center;
-            border-bottom: 1px solid #333;
-            z-index: 10;
-            position: relative;
-            flex-wrap: wrap;
+            flex-direction: column;
+            padding: 20px;
+            box-sizing: border-box;
         }
 
-        h2 { margin: 0; font-size: 18px; color: cyan; margin-right: 10px; }
+        #side-panel.open { left: 0; }
 
-        .control-group { display: flex; flex-direction: column; width: 130px; }
+        #close-btn {
+            position: absolute; top: 15px; right: 15px;
+            background: none; border: none; color: #666;
+            font-size: 24px; cursor: pointer;
+        }
+        #close-btn:hover { color: white; }
 
-        label { font-size: 11px; margin-bottom: 5px; color: #aaa; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;}
+        h2 { margin: 0 0 25px 0; font-size: 22px; color: cyan; border-bottom: 1px solid #333; padding-bottom: 15px; }
+
+        .control-group { margin-bottom: 20px; width: 100%; }
+
+        label { display: block; font-size: 12px; margin-bottom: 8px; color: #aaa; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;}
         span.val { color: white; float: right; }
 
         input[type=range] {
@@ -38,22 +65,25 @@
 
         select {
             background: #333; color: white; border: 1px solid #555;
-            padding: 2px 5px; border-radius: 3px; width: 100%; font-size: 12px; cursor: pointer;
+            padding: 8px; border-radius: 3px; width: 100%; font-size: 13px; cursor: pointer;
         }
 
-        #chart-container { height: calc(100vh - 75px); width: 100%; }
+        #chart-container { height: 100vh; width: 100%; }
 
         #info-overlay {
-            position: absolute; bottom: 10px; left: 10px;
-            color: rgba(255,255,255,0.6); font-size: 12px;
+            position: absolute; bottom: 15px; left: 15px;
+            color: rgba(255,255,255,0.5); font-size: 11px;
             pointer-events: none; user-select: none;
             z-index: 5;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 10px;
+            border-radius: 4px;
         }
 
         #loading {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             color: cyan; font-size: 24px; font-weight: bold;
-            background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; z-index: 1000;
+            background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; z-index: 2000;
         }
     </style>
 </head>
@@ -61,10 +91,13 @@
 
     <div id="loading">Fetching USGS Data...</div>
 
-    <div id="controls-container">
+    <button id="menu-btn">☰ Settings</button>
+
+    <div id="side-panel">
+        <button id="close-btn">×</button>
         <h2>Earthquake<br>Depth Map</h2>
 
-        <div class="control-group" style="width: 100px;">
+        <div class="control-group">
             <label>Palette</label>
             <select id="color-select">
                 <option value="Hot" selected>Hot</option>
@@ -76,7 +109,7 @@
             </select>
         </div>
 
-        <div class="control-group" style="width: 100px;">
+        <div class="control-group">
             <label>Colour By</label>
             <select id="color-mode">
                 <option value="mag" selected>Magnitude</option>
@@ -92,7 +125,7 @@
 
         <div class="control-group">
             <label>Mag Bonus: <span id="mag-val" class="val">0.1</span></label>
-            <input type="range" id="mag-slider" min="0" max="1" step="0.05">
+            <input type="range" id="mag-slider" min="0" max="1" step="0.01">
         </div>
 
         <div class="control-group">
@@ -100,7 +133,7 @@
             <input type="range" id="depth-slider" min="1" max="5" step="0.5">
         </div>
 
-        <div class="control-group" style="width: 80px;">
+        <div class="control-group">
             <label>Borders: <span id="border-val" class="val">1</span></label>
             <input type="range" id="border-slider" min="0" max="4" step="1">
         </div>
@@ -115,27 +148,27 @@
         const USGS_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_month.geojson";
         const BORDERS_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
 
-        // Exponential steps for borders
         const BORDER_WIDTHS = [0, 1, 2, 4, 8, 16];
-
-        // --- ROTATION SETTINGS ---
         const ROTATION_SPEED = 0.0005;
 
         // --- State ---
         let rawQuakeData = [];
         let stats = {
-            maxMag: 0,
-            maxDepth: 0,
-            minTime: 0,
-            maxTime: 0,
-            avgMag: 0
+            maxMag: 0, maxDepth: 0, minTime: 0, maxTime: 0, avgMag: 0
         };
 
         let staticBorderArrays = { x: [], y: [], z: [] };
         let staticGridArrays = { x: [], y: [], z: [] };
 
-        // Interaction State
+        let currentCamera = null;
         let autoRotate = true;
+
+        // --- UI Logic ---
+        function toggleMenu() {
+            document.getElementById('side-panel').classList.toggle('open');
+        }
+        document.getElementById('menu-btn').addEventListener('click', toggleMenu);
+        document.getElementById('close-btn').addEventListener('click', toggleMenu);
 
         // --- Math Helpers ---
         function latLonToXYZ(lat, lon, radius) {
@@ -250,6 +283,10 @@
                 console.log("--- DATA REPORT ---");
                 console.log(`Total Earthquakes: ${count}`);
                 console.log(`Average Magnitude: ${realAvgMag.toFixed(3)}`);
+                console.log(`Maximum Magnitude: ${stats.maxMag.toFixed(2)}`);
+                console.log(`Maximum Depth: ${stats.maxDepth} km`);
+                console.log(`Earliest Date: ${new Date(stats.minTime).toISOString()}`);
+                console.log(`Latest Date:   ${new Date(stats.maxTime).toISOString()}`);
                 console.log("-------------------");
 
                 document.getElementById('info-overlay').innerText =
@@ -267,17 +304,14 @@
                 // Initial Draw
                 updatePlot(true);
 
-                // --- INTERACTION LOGIC ---
+                // Interaction
                 const graphDiv = document.getElementById('chart-container');
-
                 const stopRotation = () => { autoRotate = false; };
 
-                // Stop on Click/Drag or Zoom
                 graphDiv.addEventListener('mousedown', stopRotation);
                 graphDiv.addEventListener('touchstart', stopRotation);
                 graphDiv.addEventListener('wheel', stopRotation);
 
-                // Start Animation Loop
                 requestAnimationFrame(animateGlobe);
 
             } catch (err) {
@@ -289,8 +323,6 @@
         function animateGlobe() {
             if (autoRotate) {
                 const graphDiv = document.getElementById('chart-container');
-
-                // Get the LIVE camera from Plotly's internal layout
                 const scene = graphDiv._fullLayout ? graphDiv._fullLayout.scene : null;
 
                 if (scene && scene.camera) {
@@ -324,6 +356,7 @@
             const height = window.innerHeight;
             const aspectRatio = width / height;
 
+            // Updated base distance to 0.9 (Very Close)
             const baseDistance = 0.9;
 
             let finalDistance;
@@ -444,16 +477,13 @@
                 showlegend: false
             };
 
-            // --- CAMERA PRESERVATION LOGIC ---
+            // Camera Capture
             const graphDiv = document.getElementById('chart-container');
-
-            // 1. Capture user camera if available
             let userCamera = null;
             if (!isInitial && graphDiv._fullLayout && graphDiv._fullLayout.scene) {
                 userCamera = graphDiv._fullLayout.scene.camera;
             }
 
-            // 2. Apply camera
             if (isInitial) {
                 layout.scene.camera = calculateResponsiveCamera();
             } else if (userCamera) {
