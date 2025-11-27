@@ -15,7 +15,7 @@
             color: #eee;
             box-shadow: 0 4px 15px rgba(0,0,0,0.8);
             display: flex;
-            gap: 20px;
+            gap: 15px;
             align-items: center;
             justify-content: center;
             border-bottom: 1px solid #333;
@@ -26,8 +26,7 @@
 
         h2 { margin: 0; font-size: 18px; color: cyan; margin-right: 10px; }
 
-        /* Unified control group style */
-        .control-group { display: flex; flex-direction: column; width: 140px; }
+        .control-group { display: flex; flex-direction: column; width: 130px; }
 
         label { font-size: 11px; margin-bottom: 5px; color: #aaa; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;}
         span.val { color: white; float: right; }
@@ -37,19 +36,13 @@
             height: 4px; background: #444; border-radius: 2px;
         }
 
-        /* Dropdown Style */
         select {
             background: #333; color: white; border: 1px solid #555;
-            padding: 2px 5px; border-radius: 3px; width: 100%; font-size: 12px;
+            padding: 2px 5px; border-radius: 3px; width: 100%; font-size: 12px; cursor: pointer;
         }
-
-        .radio-container { display: flex; gap: 10px; font-size: 12px; }
-        .radio-item { display: flex; align-items: center; cursor: pointer; }
-        .radio-item input { margin-right: 5px; accent-color: cyan; }
 
         #chart-container { height: calc(100vh - 75px); width: 100%; }
 
-        /* Info Overlay */
         #info-overlay {
             position: absolute; bottom: 10px; left: 10px;
             color: rgba(255,255,255,0.6); font-size: 12px;
@@ -69,36 +62,47 @@
     <div id="loading">Fetching USGS Data...</div>
 
     <div id="controls-container">
-        <h2>Earthquake<br>Monitor</h2>
+        <h2>Earthquake Depth Map</h2>
 
-        <div class="control-group" style="width: 120px;">
-            <label>Color Palette</label>
+        <div class="control-group" style="width: 100px;">
+            <label>Palette</label>
             <select id="color-select">
-                <option value="Rainbow" selected>Rainbow</option>
+                <option value="Hot" selected>Hot</option>
+                <option value="Rainbow">Rainbow</option>
                 <option value="YlOrRd">YlOrRd</option>
                 <option value="YlGnBu">YlGnBu</option>
-                <option value="Hot">Hot</option>
                 <option value="Greys">Greys</option>
                 <option value="Electric">Electric</option>
             </select>
         </div>
 
-        <div class="control-group" style="width: 110px;">
-            <label>Color By</label>
-            <div class="radio-container">
-                <label class="radio-item"><input type="radio" name="color-mode" value="depth" checked> Depth</label>
-                <label class="radio-item"><input type="radio" name="color-mode" value="mag"> Mag</label>
-            </div>
+        <div class="control-group" style="width: 100px;">
+            <label>Colour By</label>
+            <select id="color-mode">
+                <option value="depth" selected>Depth</option>
+                <option value="mag">Magnitude</option>
+                <option value="date">Date</option>
+            </select>
         </div>
 
         <div class="control-group">
-            <label>Linear Scale: <span id="linear-val" class="val">2.0</span></label>
-            <input type="range" id="linear-slider" min="1.0" max="5.0" step="0.5">
+            <label>Point Size: <span id="size-val" class="val">2.0</span></label>
+            <input type="range" id="size-slider" min="0.5" max="5.0" step="0.5">
         </div>
 
         <div class="control-group">
-            <label>Magnitude: <span id="mag-val" class="val">1.2</span></label>
+            <label>Mag Scale: <span id="mag-val" class="val">1.0</span></label>
             <input type="range" id="mag-slider" min="0" max="3" step="0.1">
+        </div>
+
+        <div class="control-group">
+            <label>Depth Scale: <span id="depth-val" class="val">1.0</span></label>
+            <input type="range" id="depth-slider" min="1" max="10" step="0.1">
+        </div>
+
+        <div class="control-group" style="width: 80px;">
+            <label>Borders: <span id="border-val" class="val">1</span></label>
+            <input type="range" id="border-slider" min="0" max="5" step="1">
         </div>
     </div>
 
@@ -113,7 +117,13 @@
 
         // --- State ---
         let rawQuakeData = [];
-        let stats = { maxMag: 0, maxDepth: 0, avgMag: 0 };
+        let stats = {
+            maxMag: 0,
+            maxDepth: 0,
+            minTime: 0,
+            maxTime: 0,
+            medianMag: 0
+        };
 
         let staticBorderArrays = { x: [], y: [], z: [] };
         let staticGridArrays = { x: [], y: [], z: [] };
@@ -148,7 +158,6 @@
 
         function generateWireframeGrid() {
             const gx = [], gy = [], gz = [];
-            // Latitude Rings
             for (let lat = -90; lat <= 90; lat += 15) {
                 for (let lon = -180; lon <= 180; lon += 5) {
                     const [x, y, z] = latLonToXYZ(lat, lon, EARTH_RADIUS);
@@ -156,7 +165,6 @@
                 }
                 gx.push(null); gy.push(null); gz.push(null);
             }
-            // Longitude Lines
             for (let lon = -180; lon <= 180; lon += 30) {
                 for (let lat = -90; lat <= 90; lat += 5) {
                     const [x, y, z] = latLonToXYZ(lat, lon, EARTH_RADIUS);
@@ -171,10 +179,13 @@
 
         async function initApp() {
             try {
-                // 1. Force Reset Sliders/Selects to Defaults
-                document.getElementById('linear-slider').value = "2.0";
-                document.getElementById('mag-slider').value = "1.2";
-                document.getElementById('color-select').value = "Rainbow";
+                // 1. Force Reset Sliders/Selects
+                document.getElementById('size-slider').value = "2.0";
+                document.getElementById('mag-slider').value = "1.0";
+                document.getElementById('depth-slider').value = "1.0";
+                document.getElementById('border-slider').value = "1";
+                document.getElementById('color-select').value = "Hot";
+                document.getElementById('color-mode').value = "depth";
                 updateLabels();
 
                 // 2. Fetch Data
@@ -188,45 +199,56 @@
                 staticBorderArrays = processBorders(borderJson);
                 staticGridArrays = generateWireframeGrid();
 
-                // 3. Process Stats
-                let totalMag = 0;
-                let validCount = 0;
+                // 3. Process Stats & Calculate Median
+                let minT = Infinity;
+                let maxT = -Infinity;
+                let allMags = [];
 
                 rawQuakeData = quakeJson.features.map(f => {
                     const mag = Math.max(f.properties.mag || 0, 0.1);
                     const depth = f.geometry.coordinates[2];
+                    const time = f.properties.time;
 
                     if (mag > stats.maxMag) stats.maxMag = mag;
                     if (depth > stats.maxDepth) stats.maxDepth = depth;
+                    if (time < minT) minT = time;
+                    if (time > maxT) maxT = time;
 
-                    totalMag += mag;
-                    validCount++;
+                    allMags.push(mag);
 
                     return {
                         lat: f.geometry.coordinates[1],
                         lon: f.geometry.coordinates[0],
                         depth: depth,
                         mag: mag,
+                        time: time,
                         place: f.properties.place || "Unknown"
                     };
                 });
 
-                stats.avgMag = validCount > 0 ? (totalMag / validCount) : 1;
-                console.log("Stats Calculated:", stats);
+                // Calculate Median Magnitude
+                allMags.sort((a, b) => a - b);
+                const mid = Math.floor(allMags.length / 2);
+                stats.medianMag = allMags.length % 2 !== 0 ? allMags[mid] : (allMags[mid - 1] + allMags[mid]) / 2;
 
-                // Update Info Text
+                console.log("Median Magnitude:", stats.medianMag);
+
+                stats.minTime = minT;
+                stats.maxTime = maxT;
+
                 document.getElementById('info-overlay').innerText =
-                    `Data: ${validCount} earthquakes from the past month. Source: USGS.`;
+                    `Data: ${rawQuakeData.length} earthquakes from the past month. Median Mag: ${stats.medianMag.toFixed(1)}. Source: USGS.`;
 
                 document.getElementById('loading').style.display = 'none';
 
                 // 4. Attach Listeners
-                document.getElementById('linear-slider').addEventListener('input', () => { updateLabels(); updatePlot(); });
-                document.getElementById('mag-slider').addEventListener('input', () => { updateLabels(); updatePlot(); });
-                document.getElementById('color-select').addEventListener('change', () => updatePlot());
+                const inputs = ['size-slider', 'mag-slider', 'depth-slider', 'border-slider'];
+                inputs.forEach(id => {
+                    document.getElementById(id).addEventListener('input', () => { updateLabels(); updatePlot(); });
+                });
 
-                const radios = document.querySelectorAll('input[name="color-mode"]');
-                radios.forEach(radio => radio.addEventListener('change', () => updatePlot()));
+                document.getElementById('color-select').addEventListener('change', () => updatePlot());
+                document.getElementById('color-mode').addEventListener('change', () => updatePlot());
 
                 // 5. Initial Draw
                 updatePlot(true);
@@ -238,63 +260,81 @@
         }
 
         function updateLabels() {
-            document.getElementById('linear-val').innerText = parseFloat(document.getElementById('linear-slider').value).toFixed(1);
+            document.getElementById('size-val').innerText = parseFloat(document.getElementById('size-slider').value).toFixed(1);
             document.getElementById('mag-val').innerText = parseFloat(document.getElementById('mag-slider').value).toFixed(1);
+            document.getElementById('depth-val').innerText = parseFloat(document.getElementById('depth-slider').value).toFixed(1);
+            document.getElementById('border-val').innerText = document.getElementById('border-slider').value;
         }
 
         function updatePlot(isInitial = false) {
             // Inputs
-            const linearScale = parseFloat(document.getElementById('linear-slider').value);
-            const magDeviationScale = parseFloat(document.getElementById('mag-slider').value);
+            const baseSize = parseFloat(document.getElementById('size-slider').value);
+            const magScale = parseFloat(document.getElementById('mag-slider').value);
+            const depthScale = parseFloat(document.getElementById('depth-slider').value);
+            const borderWidth = parseInt(document.getElementById('border-slider').value);
+
             const selectedPalette = document.getElementById('color-select').value;
-            const colorMode = document.querySelector('input[name="color-mode"]:checked').value;
+            const colorMode = document.getElementById('color-mode').value;
 
             // Arrays
             const qx = [], qy = [], qz = [], sizes = [], colors = [], texts = [];
 
             for (const q of rawQuakeData) {
-                // 1. Depth Calculation (Controlled by Linear Scale)
-                // Linear Scale controls visual depth exaggeration
-                const r_quake = EARTH_RADIUS - (q.depth * linearScale);
+                // 1. Position with Depth Exaggeration
+                const r_quake = EARTH_RADIUS - (q.depth * depthScale);
                 const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
 
                 qx.push(x); qy.push(y); qz.push(z);
 
-                // 2. Magnitude / Size Calculation (Pivot around Average)
-                // Formula: AdjustedMag = Avg + (Actual - Avg) * Slider
-                // If Slider is 1, Adjusted = Actual.
-                // If Slider > 1, spread increases.
-                const deviation = (q.mag - stats.avgMag) * magDeviationScale;
-                const adjustedMag = stats.avgMag + deviation;
+                // 2. Size Logic (Pivot around MEDIAN)
+                // Formula: Median + (Actual - Median) * Scale
+                const deviation = (q.mag - stats.medianMag) * magScale;
+                const adjustedMag = stats.medianMag + deviation;
 
-                // Final Size = LinearScale * AdjustedMag
-                // We clamp adjustedMag so it doesn't go negative or too small
-                const s = linearScale * Math.max(0.5, adjustedMag);
+                // Final Size: Base * Adjusted. Clamp to min 0.2
+                const s = baseSize * Math.max(0.2, adjustedMag);
                 sizes.push(s);
 
-                colors.push(colorMode === 'depth' ? q.depth : q.mag);
+                // 3. Colour Logic
+                if (colorMode === 'depth') {
+                    colors.push(q.depth);
+                } else if (colorMode === 'mag') {
+                    colors.push(q.mag);
+                } else {
+                    colors.push(q.time); // Date mode
+                }
 
+                // 4. Hover Text
+                const dateStr = new Date(q.time).toLocaleDateString();
                 texts.push(
                     `<b>${q.place}</b><br>` +
+                    `Date: ${dateStr}<br>` +
                     `Magnitude: ${q.mag.toFixed(1)}<br>` +
                     `Depth: ${q.depth}km`
                 );
             }
 
             // Color Settings
-            let colorSettings = {};
+            let colorSettings = {
+                colorscale: selectedPalette,
+                colorbar: {
+                    x: 0, len: 0.5, thickness: 15,
+                    titlefont: {color: 'white'}, tickfont: {color: 'white'}
+                }
+            };
+
             if (colorMode === 'depth') {
-                colorSettings = {
-                    title: 'Depth (km)',
-                    cmin: 0, cmax: stats.maxDepth,
-                    colorscale: selectedPalette
-                };
+                colorSettings.title = 'Depth (km)';
+                colorSettings.cmin = 0;
+                colorSettings.cmax = stats.maxDepth;
+            } else if (colorMode === 'mag') {
+                colorSettings.title = 'Magnitude';
+                colorSettings.cmin = 0;
+                colorSettings.cmax = 9;
             } else {
-                colorSettings = {
-                    title: 'Magnitude',
-                    cmin: 0, cmax: 9, // Fixed max as requested
-                    colorscale: selectedPalette
-                };
+                colorSettings.title = 'Date';
+                colorSettings.cmin = stats.minTime;
+                colorSettings.cmax = stats.maxTime;
             }
 
             const gridTrace = {
@@ -307,8 +347,9 @@
             const borderTrace = {
                 type: 'scatter3d', mode: 'lines',
                 x: staticBorderArrays.x, y: staticBorderArrays.y, z: staticBorderArrays.z,
-                line: { color: '#00ffff', width: 1 },
-                opacity: 0.4, hoverinfo: 'skip'
+                line: { color: '#00ffff', width: borderWidth },
+                opacity: 0.4, hoverinfo: 'skip',
+                visible: borderWidth > 0
             };
 
             const quakeTrace = {
@@ -322,33 +363,36 @@
                     colorscale: colorSettings.colorscale,
                     cmin: colorSettings.cmin,
                     cmax: colorSettings.cmax,
-                    colorbar: {
-                        title: colorSettings.title,
-                        x: 0, len: 0.5, thickness: 15,
-                        titlefont: {color: 'white'}, tickfont: {color: 'white'}
-                    },
+                    colorbar: colorSettings.colorbar,
                     opacity: 1.0,
                     line: { width: 0 }
                 }
             };
 
+            // Layout
             const layout = {
                 paper_bgcolor: 'black', plot_bgcolor: 'black',
                 margin: { l: 0, r: 0, t: 0, b: 0 },
                 hovermode: 'closest',
+                // Uirevision tells Plotly: "If this ID hasn't changed, don't reset the camera/zoom"
+                uirevision: 'true',
                 scene: {
                     xaxis: { visible: false, showbackground: false },
                     yaxis: { visible: false, showbackground: false },
                     zaxis: { visible: false, showbackground: false },
                     aspectmode: 'data',
                     dragmode: 'orbit',
-                    camera: isInitial ? {
-                        eye: { x: 0.8, y: 0.8, z: 0.8 },
-                        center: { x: 0, y: 0, z: 0 }
-                    } : undefined
                 },
                 showlegend: false
             };
+
+            // Only set camera on initial load
+            if (isInitial) {
+                layout.scene.camera = {
+                    eye: { x: 0.8, y: 0.8, z: 0.8 },
+                    center: { x: 0, y: 0, z: 0 }
+                };
+            }
 
             Plotly.react('chart-container', [gridTrace, borderTrace, quakeTrace], layout, {responsive: true});
         }
