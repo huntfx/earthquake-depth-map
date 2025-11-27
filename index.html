@@ -26,7 +26,8 @@
 
         h2 { margin: 0; font-size: 18px; color: cyan; margin-right: 10px; }
 
-        .control-group { display: flex; flex-direction: column; width: 150px; }
+        /* Unified control group style */
+        .control-group { display: flex; flex-direction: column; width: 140px; }
 
         label { font-size: 11px; margin-bottom: 5px; color: #aaa; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;}
         span.val { color: white; float: right; }
@@ -36,11 +37,25 @@
             height: 4px; background: #444; border-radius: 2px;
         }
 
+        /* Dropdown Style */
+        select {
+            background: #333; color: white; border: 1px solid #555;
+            padding: 2px 5px; border-radius: 3px; width: 100%; font-size: 12px;
+        }
+
         .radio-container { display: flex; gap: 10px; font-size: 12px; }
         .radio-item { display: flex; align-items: center; cursor: pointer; }
         .radio-item input { margin-right: 5px; accent-color: cyan; }
 
         #chart-container { height: calc(100vh - 75px); width: 100%; }
+
+        /* Info Overlay */
+        #info-overlay {
+            position: absolute; bottom: 10px; left: 10px;
+            color: rgba(255,255,255,0.6); font-size: 12px;
+            pointer-events: none; user-select: none;
+            z-index: 5;
+        }
 
         #loading {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -56,8 +71,20 @@
     <div id="controls-container">
         <h2>Earthquake<br>Monitor</h2>
 
-        <div class="control-group" style="width: 140px;">
-            <label>Color Scheme:</label>
+        <div class="control-group" style="width: 120px;">
+            <label>Color Palette</label>
+            <select id="color-select">
+                <option value="Rainbow" selected>Rainbow</option>
+                <option value="YlOrRd">YlOrRd</option>
+                <option value="YlGnBu">YlGnBu</option>
+                <option value="Hot">Hot</option>
+                <option value="Greys">Greys</option>
+                <option value="Electric">Electric</option>
+            </select>
+        </div>
+
+        <div class="control-group" style="width: 110px;">
+            <label>Color By</label>
             <div class="radio-container">
                 <label class="radio-item"><input type="radio" name="color-mode" value="depth" checked> Depth</label>
                 <label class="radio-item"><input type="radio" name="color-mode" value="mag"> Mag</label>
@@ -65,22 +92,18 @@
         </div>
 
         <div class="control-group">
-            <label>Base Scale: <span id="size-val" class="val">2.0</span></label>
-            <input type="range" id="size-slider" min="0.5" max="5.0" step="0.5">
+            <label>Linear Scale: <span id="linear-val" class="val">2.0</span></label>
+            <input type="range" id="linear-slider" min="1.0" max="5.0" step="0.5">
         </div>
 
         <div class="control-group">
-            <label>Mag Scale: <span id="exp-val" class="val">1.0</span></label>
-            <input type="range" id="exp-slider" min="0" max="4" step="0.1">
-        </div>
-
-        <div class="control-group">
-            <label>Depth Scale: <span id="depth-val" class="val">2.0</span>x</label>
-            <input type="range" id="depth-slider" min="1" max="10" step="0.1">
+            <label>Magnitude: <span id="mag-val" class="val">1.2</span></label>
+            <input type="range" id="mag-slider" min="0" max="3" step="0.1">
         </div>
     </div>
 
     <div id="chart-container"></div>
+    <div id="info-overlay">Waiting for data...</div>
 
     <script>
         // --- Constants ---
@@ -148,11 +171,11 @@
 
         async function initApp() {
             try {
-                // 1. Force Reset Sliders to Defaults (Fixes Browser Cache Issue)
-                document.getElementById('size-slider').value = "2.0";
-                document.getElementById('exp-slider').value = "1.0";
-                document.getElementById('depth-slider').value = "2.0";
-                updateLabels(); // Sync text immediately
+                // 1. Force Reset Sliders/Selects to Defaults
+                document.getElementById('linear-slider').value = "2.0";
+                document.getElementById('mag-slider').value = "1.2";
+                document.getElementById('color-select').value = "Rainbow";
+                updateLabels();
 
                 // 2. Fetch Data
                 const [quakeRes, borderRes] = await Promise.all([
@@ -191,15 +214,16 @@
                 stats.avgMag = validCount > 0 ? (totalMag / validCount) : 1;
                 console.log("Stats Calculated:", stats);
 
+                // Update Info Text
+                document.getElementById('info-overlay').innerText =
+                    `Data: ${validCount} earthquakes from the past month. Source: USGS.`;
+
                 document.getElementById('loading').style.display = 'none';
 
                 // 4. Attach Listeners
-                ['size-slider', 'depth-slider', 'exp-slider'].forEach(id => {
-                    document.getElementById(id).addEventListener('input', () => {
-                        updateLabels();
-                        updatePlot();
-                    });
-                });
+                document.getElementById('linear-slider').addEventListener('input', () => { updateLabels(); updatePlot(); });
+                document.getElementById('mag-slider').addEventListener('input', () => { updateLabels(); updatePlot(); });
+                document.getElementById('color-select').addEventListener('change', () => updatePlot());
 
                 const radios = document.querySelectorAll('input[name="color-mode"]');
                 radios.forEach(radio => radio.addEventListener('change', () => updatePlot()));
@@ -214,30 +238,38 @@
         }
 
         function updateLabels() {
-            // Updated to support decimals
-            document.getElementById('size-val').innerText = parseFloat(document.getElementById('size-slider').value).toFixed(1);
-            document.getElementById('exp-val').innerText = parseFloat(document.getElementById('exp-slider').value).toFixed(1);
-            document.getElementById('depth-val').innerText = parseFloat(document.getElementById('depth-slider').value).toFixed(1);
+            document.getElementById('linear-val').innerText = parseFloat(document.getElementById('linear-slider').value).toFixed(1);
+            document.getElementById('mag-val').innerText = parseFloat(document.getElementById('mag-slider').value).toFixed(1);
         }
 
         function updatePlot(isInitial = false) {
-            const baseScale = parseFloat(document.getElementById('size-slider').value);
-            const magScale = parseFloat(document.getElementById('exp-slider').value);
-            const depthScale = parseFloat(document.getElementById('depth-slider').value);
+            // Inputs
+            const linearScale = parseFloat(document.getElementById('linear-slider').value);
+            const magDeviationScale = parseFloat(document.getElementById('mag-slider').value);
+            const selectedPalette = document.getElementById('color-select').value;
             const colorMode = document.querySelector('input[name="color-mode"]:checked').value;
 
+            // Arrays
             const qx = [], qy = [], qz = [], sizes = [], colors = [], texts = [];
 
             for (const q of rawQuakeData) {
-                // Depth Math
-                const r_quake = EARTH_RADIUS - (q.depth * depthScale);
+                // 1. Depth Calculation (Controlled by Linear Scale)
+                // Linear Scale controls visual depth exaggeration
+                const r_quake = EARTH_RADIUS - (q.depth * linearScale);
                 const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
 
                 qx.push(x); qy.push(y); qz.push(z);
 
-                // Size Math: (Mag / AvgMag) ^ Scale
-                const ratio = Math.pow((q.mag / stats.avgMag), magScale);
-                const s = baseScale * ratio * 2;
+                // 2. Magnitude / Size Calculation (Pivot around Average)
+                // Formula: AdjustedMag = Avg + (Actual - Avg) * Slider
+                // If Slider is 1, Adjusted = Actual.
+                // If Slider > 1, spread increases.
+                const deviation = (q.mag - stats.avgMag) * magDeviationScale;
+                const adjustedMag = stats.avgMag + deviation;
+
+                // Final Size = LinearScale * AdjustedMag
+                // We clamp adjustedMag so it doesn't go negative or too small
+                const s = linearScale * Math.max(0.5, adjustedMag);
                 sizes.push(s);
 
                 colors.push(colorMode === 'depth' ? q.depth : q.mag);
@@ -245,8 +277,7 @@
                 texts.push(
                     `<b>${q.place}</b><br>` +
                     `Magnitude: ${q.mag.toFixed(1)}<br>` +
-                    `Depth: ${q.depth}km<br>` +
-                    `<i>(Visual Depth: ${(q.depth * depthScale).toFixed(0)}km)</i>`
+                    `Depth: ${q.depth}km`
                 );
             }
 
@@ -256,13 +287,13 @@
                 colorSettings = {
                     title: 'Depth (km)',
                     cmin: 0, cmax: stats.maxDepth,
-                    colorscale: 'Rainbow'
+                    colorscale: selectedPalette
                 };
             } else {
                 colorSettings = {
                     title: 'Magnitude',
-                    cmin: 0, cmax: stats.maxMag,
-                    colorscale: 'Rainbow'
+                    cmin: 0, cmax: 9, // Fixed max as requested
+                    colorscale: selectedPalette
                 };
             }
 
