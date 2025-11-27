@@ -9,7 +9,6 @@
     <style>
         body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-family: sans-serif; overflow: hidden; }
 
-        /* --- MENU BUTTON --- */
         #menu-btn {
             position: absolute; top: 15px; left: 15px;
             background: rgba(0, 0, 0, 0.6);
@@ -24,7 +23,6 @@
         }
         #menu-btn:hover { background: rgba(0, 255, 255, 0.2); }
 
-        /* --- SIDE PANEL --- */
         #side-panel {
             position: fixed;
             top: 0; left: -320px;
@@ -163,6 +161,9 @@
         let currentCamera = null;
         let autoRotate = true;
 
+        // Debug Logger
+        let frameCounter = 0;
+
         // --- UI Logic ---
         function toggleMenu() {
             document.getElementById('side-panel').classList.toggle('open');
@@ -279,7 +280,6 @@
                 stats.minTime = minT;
                 stats.maxTime = maxT;
 
-                // Console Log
                 console.log("--- DATA REPORT ---");
                 console.log(`Total Earthquakes: ${count}`);
                 console.log(`Average Magnitude: ${realAvgMag.toFixed(3)}`);
@@ -304,13 +304,38 @@
                 // Initial Draw
                 updatePlot(true);
 
-                // Interaction
+                // --- INTERACTION LOGIC ---
                 const graphDiv = document.getElementById('chart-container');
+
                 const stopRotation = () => { autoRotate = false; };
 
+                // Stop on Click/Drag or Zoom
                 graphDiv.addEventListener('mousedown', stopRotation);
                 graphDiv.addEventListener('touchstart', stopRotation);
                 graphDiv.addEventListener('wheel', stopRotation);
+
+                // CLICK TO FOCUS
+                graphDiv.on('plotly_click', function(data){
+                    if(data.points.length === 0) return;
+                    const pt = data.points[0];
+                    stopRotation();
+
+                    // --- NORMALIZATION (Scale 0.5) ---
+                    // This maps the data coordinates (approx 6371) to camera space (approx 0.5)
+                    // doubling the previous 0.25 estimate.
+                    const PLOT_SCALE = 3000 / EARTH_RADIUS;
+
+                    const cx = (pt.x / EARTH_RADIUS) * PLOT_SCALE;
+                    const cy = (pt.y / EARTH_RADIUS) * PLOT_SCALE;
+                    const cz = (pt.z / EARTH_RADIUS) * PLOT_SCALE;
+
+                    // Eye offset (Zoom level relative to new center)
+                    const zoom = 1.3;
+
+                    Plotly.relayout('chart-container', {
+                        'scene.camera.center': { x: cx, y: cy, z: cz },
+                    });
+                });
 
                 requestAnimationFrame(animateGlobe);
 
@@ -321,13 +346,24 @@
         }
 
         function animateGlobe() {
-            if (autoRotate) {
-                const graphDiv = document.getElementById('chart-container');
-                const scene = graphDiv._fullLayout ? graphDiv._fullLayout.scene : null;
+            const graphDiv = document.getElementById('chart-container');
 
-                if (scene && scene.camera) {
-                    const eye = scene.camera.eye;
+            // Get LIVE camera (Always get it)
+            const scene = graphDiv._fullLayout ? graphDiv._fullLayout.scene : null;
 
+            if (scene && scene.camera) {
+                const eye = scene.camera.eye;
+
+                // --- CONTINUOUS LOGGING ---
+                frameCounter++;
+                if (frameCounter > 60) {
+                    const radius = Math.sqrt(eye.x*eye.x + eye.y*eye.y + eye.z*eye.z).toFixed(3);
+                    // console.log(`Cam X: ${eye.x.toFixed(2)}, Y: ${eye.y.toFixed(2)}, Z: ${eye.z.toFixed(2)}, R: ${radius}`);
+                    frameCounter = 0;
+                }
+
+                // --- ROTATION ---
+                if (autoRotate) {
                     const cos = Math.cos(ROTATION_SPEED);
                     const sin = Math.sin(ROTATION_SPEED);
 
@@ -356,7 +392,7 @@
             const height = window.innerHeight;
             const aspectRatio = width / height;
 
-            // Updated base distance to 0.9 (Very Close)
+            // Base distance 0.9 (Close zoom)
             const baseDistance = 0.9;
 
             let finalDistance;
