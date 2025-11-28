@@ -69,6 +69,29 @@
             box-sizing: border-box; /* Ensure padding doesn't overflow width */
         }
 
+        /* Checkbox styling */
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #333;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #555;
+            margin-bottom: 15px;
+        }
+        .checkbox-group label {
+            margin: 0;
+            cursor: pointer;
+            color: white;
+        }
+        input[type=checkbox] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            accent-color: cyan;
+        }
+
         select {
             background: #333; color: white; border: 1px solid #555;
             padding: 8px; border-radius: 3px; width: 100%; font-size: 13px; cursor: pointer;
@@ -193,7 +216,12 @@
 
         <div class="control-group">
             <label>Border Width: <span id="border-val" class="val">1</span></label>
-            <input type="range" id="border-slider" min="0" max="4" step="1">
+            <input type="range" id="border-slider" min="0" max="4" step="1" value="1">
+        </div>
+
+        <div class="control-group">
+            <label>Plate Width: <span id="plate-width-val" class="val">1</span></label>
+            <input type="range" id="plate-width-slider" min="0" max="4" step="1" value="1">
         </div>
     </div>
 
@@ -206,6 +234,7 @@
         // Dynamic Query URL (USGS API)
         const USGS_BASE_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&orderby=magnitude";
         const BORDERS_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
+        const PLATES_URL = "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json";
 
         const BORDER_WIDTHS = [0, 1, 2, 4, 8, 16];
         const ROTATION_SPEED = -0.001;
@@ -217,6 +246,7 @@
         };
 
         let staticBorderArrays = { x: [], y: [], z: [] };
+        let staticPlateArrays = { x: [], y: [], z: [] };
         let staticGridArrays = { x: [], y: [], z: [] };
 
         let currentCamera = null;
@@ -268,6 +298,31 @@
             return { x: bx, y: by, z: bz };
         }
 
+        function processPlates(geojson) {
+            const px = [], py = [], pz = [];
+            geojson.features.forEach(feature => {
+                const geometry = feature.geometry;
+                const type = geometry.type;
+                let lines = [];
+
+                if (type === 'LineString') {
+                    lines = [geometry.coordinates];
+                } else if (type === 'MultiLineString') {
+                    lines = geometry.coordinates;
+                }
+
+                lines.forEach(line => {
+                    line.forEach(pt => {
+                        // Plates at slightly higher radius to avoid z-fighting with borders
+                        const [x, y, z] = latLonToXYZ(pt[1], pt[0], EARTH_RADIUS + 2);
+                        px.push(x); py.push(y); pz.push(z);
+                    });
+                    px.push(null); py.push(null); pz.push(null);
+                });
+            });
+            return { x: px, y: py, z: pz };
+        }
+
         function generateWireframeGrid() {
             const gx = [], gy = [], gz = [];
             for (let lat = -90; lat <= 90; lat += 15) {
@@ -298,6 +353,7 @@
                 document.getElementById('mag-slider').value = "0.1";
                 document.getElementById('depth-slider').value = "2.5";
                 document.getElementById('border-slider').value = "1";
+                document.getElementById('plate-width-slider').value = "1"; // Default plate width index
                 document.getElementById('color-select').value = "Hot";
                 document.getElementById('color-mode').value = "mag";
 
@@ -309,17 +365,24 @@
 
                 updateLabels();
 
-                // Fetch Static Data (Borders)
+                // Fetch Static Data (Borders & Plates)
                 console.log("Downloading static map data...");
                 document.getElementById('loading').innerText = "Loading Map Data...";
-                const borderRes = await fetch(BORDERS_URL);
+
+                const [borderRes, platesRes] = await Promise.all([
+                    fetch(BORDERS_URL),
+                    fetch(PLATES_URL)
+                ]);
+
                 const borderJson = await borderRes.json();
+                const platesJson = await platesRes.json();
 
                 staticBorderArrays = processBorders(borderJson);
+                staticPlateArrays = processPlates(platesJson);
                 staticGridArrays = generateWireframeGrid();
 
                 // Setup Listeners
-                const inputs = ['size-slider', 'mag-slider', 'depth-slider', 'border-slider', 'min-mag-slider', 'max-mag-slider', 'min-depth-filter', 'max-depth-filter'];
+                const inputs = ['size-slider', 'mag-slider', 'depth-slider', 'border-slider', 'min-mag-slider', 'max-mag-slider', 'min-depth-filter', 'max-depth-filter', 'plate-width-slider'];
                 inputs.forEach(id => {
                     document.getElementById(id).addEventListener('input', () => {
                         updateLabels();
@@ -513,6 +576,9 @@
             const bIndex = parseInt(document.getElementById('border-slider').value);
             document.getElementById('border-val').innerText = BORDER_WIDTHS[bIndex];
 
+            const pIndex = parseInt(document.getElementById('plate-width-slider').value);
+            document.getElementById('plate-width-val').innerText = BORDER_WIDTHS[pIndex];
+
             // New Slider Labels
             document.getElementById('min-mag-val').innerText = document.getElementById('min-mag-slider').value;
             document.getElementById('max-mag-val').innerText = document.getElementById('max-mag-slider').value;
@@ -539,6 +605,7 @@
             const magBonusScale = parseFloat(document.getElementById('mag-slider').value);
             const depthScale = parseFloat(document.getElementById('depth-slider').value);
             const borderWidth = BORDER_WIDTHS[parseInt(document.getElementById('border-slider').value)];
+            const plateWidth = BORDER_WIDTHS[parseInt(document.getElementById('plate-width-slider').value)];
 
             const selectedPalette = document.getElementById('color-select').value;
             const colorMode = document.getElementById('color-mode').value;
@@ -608,6 +675,13 @@
                 visible: borderWidth > 0
             };
 
+            const plateTrace = {
+                type: 'scatter3d', mode: 'lines',
+                x: staticPlateArrays.x, y: staticPlateArrays.y, z: staticPlateArrays.z,
+                line: { color: '#1E90FF', width: plateWidth }, opacity: 0.8, hoverinfo: 'skip',
+                visible: plateWidth > 0
+            };
+
             const quakeTrace = {
                 type: 'scatter3d', mode: 'markers',
                 x: qx, y: qy, z: qz,
@@ -654,7 +728,7 @@
 
             layout.uirevision = 'true';
 
-            Plotly.react('chart-container', [gridTrace, borderTrace, quakeTrace, ghostTrace], layout, {responsive: true});
+            Plotly.react('chart-container', [gridTrace, borderTrace, plateTrace, quakeTrace, ghostTrace], layout, {responsive: true});
         }
 
         initApp();
