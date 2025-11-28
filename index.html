@@ -25,8 +25,8 @@
 
         #side-panel {
             position: fixed;
-            top: 0; left: -320px;
-            width: 280px;
+            top: 0; left: -340px; /* Increased width to accommodate new inputs */
+            width: 300px;
             height: 100%;
             background: rgba(20, 20, 20, 0.95);
             border-right: 1px solid #333;
@@ -49,11 +49,13 @@
         }
         #close-btn:hover { color: white; }
 
-        h2 { margin: 0 0 25px 0; font-size: 22px; color: cyan; border-bottom: 1px solid #333; padding-bottom: 15px; }
+        h2 { margin: 0 0 20px 0; font-size: 22px; color: cyan; border-bottom: 1px solid #333; padding-bottom: 15px; }
+        h3 { margin: 20px 0 10px 0; font-size: 14px; color: #888; text-transform: uppercase; border-bottom: 1px solid #444; padding-bottom: 5px; }
+        h3:first-of-type { margin-top: 0; }
 
-        .control-group { margin-bottom: 20px; width: 100%; }
+        .control-group { margin-bottom: 15px; width: 100%; }
 
-        label { display: block; font-size: 12px; margin-bottom: 8px; color: #aaa; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;}
+        label { display: block; font-size: 12px; margin-bottom: 5px; color: #aaa; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;}
         span.val { color: white; float: right; }
 
         input[type=range] {
@@ -61,10 +63,25 @@
             height: 4px; background: #444; border-radius: 2px;
         }
 
+        input[type=date] {
+            width: 100%; background: #333; color: white; border: 1px solid #555;
+            padding: 5px; border-radius: 3px; font-family: sans-serif;
+            box-sizing: border-box; /* Ensure padding doesn't overflow width */
+        }
+
         select {
             background: #333; color: white; border: 1px solid #555;
             padding: 8px; border-radius: 3px; width: 100%; font-size: 13px; cursor: pointer;
         }
+
+        #load-btn {
+            width: 100%; background: cyan; color: black; border: none;
+            padding: 10px; font-weight: bold; cursor: pointer;
+            margin-bottom: 20px; border-radius: 4px;
+            text-transform: uppercase; letter-spacing: 1px;
+            transition: background 0.2s;
+        }
+        #load-btn:hover { background: #ccffff; }
 
         #chart-container { height: 100vh; width: 100%; }
 
@@ -87,13 +104,37 @@
 </head>
 <body>
 
-    <div id="loading">Fetching USGS Data...</div>
+    <div id="loading">Initializing...</div>
 
     <button id="menu-btn">☰ Settings</button>
 
     <div id="side-panel">
         <button id="close-btn">×</button>
         <h2>Earthquake<br>Depth Map</h2>
+
+        <h3>Data Filters</h3>
+
+        <div class="control-group">
+            <label>Start Date</label>
+            <input type="date" id="start-date">
+        </div>
+        <div class="control-group">
+            <label>End Date</label>
+            <input type="date" id="end-date">
+        </div>
+
+        <div class="control-group">
+            <label>Min Magnitude: <span id="min-mag-val" class="val">0.0</span></label>
+            <input type="range" id="min-mag-slider" min="0" max="9" step="0.1" value="0">
+        </div>
+        <div class="control-group">
+            <label>Max Magnitude: <span id="max-mag-val" class="val">10.0</span></label>
+            <input type="range" id="max-mag-slider" min="0" max="10" step="0.1" value="10">
+        </div>
+
+        <button id="load-btn">Load Data</button>
+
+        <h3>Visualization</h3>
 
         <div class="control-group">
             <label>Palette</label>
@@ -122,7 +163,7 @@
         </div>
 
         <div class="control-group">
-            <label>Mag Bonus: <span id="mag-val" class="val">0.1</span></label>
+            <label>Magnitude Bonus: <span id="mag-val" class="val">0.1</span></label>
             <input type="range" id="mag-slider" min="0" max="1" step="0.01">
         </div>
 
@@ -132,7 +173,7 @@
         </div>
 
         <div class="control-group">
-            <label>Borders: <span id="border-val" class="val">1</span></label>
+            <label>Border Width: <span id="border-val" class="val">1</span></label>
             <input type="range" id="border-slider" min="0" max="4" step="1">
         </div>
     </div>
@@ -143,11 +184,12 @@
     <script>
         // --- Constants ---
         const EARTH_RADIUS = 6371;
-        const USGS_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_month.geojson";
+        // Dynamic Query URL (USGS API)
+        const USGS_BASE_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&orderby=time";
         const BORDERS_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
 
         const BORDER_WIDTHS = [0, 1, 2, 4, 8, 16];
-        const ROTATION_SPEED = 0.0005;
+        const ROTATION_SPEED = -0.001;
 
         // --- State ---
         let rawQuakeData = [];
@@ -160,8 +202,6 @@
 
         let currentCamera = null;
         let autoRotate = true;
-
-        // Debug Logger
         let frameCounter = 0;
 
         // --- UI Logic ---
@@ -170,6 +210,17 @@
         }
         document.getElementById('menu-btn').addEventListener('click', toggleMenu);
         document.getElementById('close-btn').addEventListener('click', toggleMenu);
+
+        // --- Date Helpers ---
+        function setDefaultDates() {
+            const end = new Date();
+            const start = new Date();
+            start.setMonth(start.getMonth() - 1); // Default to 1 month ago
+
+            // Formatting to YYYY-MM-DD
+            document.getElementById('end-date').value = end.toISOString().split('T')[0];
+            document.getElementById('start-date').value = start.toISOString().split('T')[0];
+        }
 
         // --- Math Helpers ---
         function latLonToXYZ(lat, lon, radius) {
@@ -185,7 +236,7 @@
         function processBorders(geojson) {
             const bx = [], by = [], bz = [];
             geojson.features.forEach(feature => {
-                const polygons = (feature.geometry.type === 'Polygon') ? feature.geometry.coordinates : feature.geometry.coordinates;
+                const polygons = (feature.geometry.type === 'Polygon') ? [feature.geometry.coordinates] : feature.geometry.coordinates;
                 polygons.forEach(poly => {
                     const actualPoly = (feature.geometry.type === 'MultiPolygon') ? poly[0] : poly;
                     actualPoly.forEach(pt => {
@@ -221,6 +272,7 @@
         async function initApp() {
             try {
                 console.log("Starting application...");
+                setDefaultDates();
 
                 // Defaults
                 document.getElementById('size-slider').value = "2.5";
@@ -229,25 +281,110 @@
                 document.getElementById('border-slider').value = "1";
                 document.getElementById('color-select').value = "Hot";
                 document.getElementById('color-mode').value = "mag";
+
+                // Initialize new filters
+                document.getElementById('min-mag-slider').value = "0";
+                document.getElementById('max-mag-slider').value = "10";
+
                 updateLabels();
 
-                // Fetch
-                console.log("Downloading data...");
-                const [quakeRes, borderRes] = await Promise.all([
-                    fetch(USGS_URL),
-                    fetch(BORDERS_URL)
-                ]);
-
-                const quakeJson = await quakeRes.json();
+                // Fetch Static Data (Borders)
+                console.log("Downloading static map data...");
+                document.getElementById('loading').innerText = "Loading Map Data...";
+                const borderRes = await fetch(BORDERS_URL);
                 const borderJson = await borderRes.json();
 
                 staticBorderArrays = processBorders(borderJson);
                 staticGridArrays = generateWireframeGrid();
 
-                // Process Stats
-                let minT = Infinity, maxT = -Infinity;
+                // Setup Listeners
+                const inputs = ['size-slider', 'mag-slider', 'depth-slider', 'border-slider', 'min-mag-slider', 'max-mag-slider'];
+                inputs.forEach(id => {
+                    document.getElementById(id).addEventListener('input', () => {
+                        updateLabels();
+                        // Only auto-update plot for visual sliders, not data filter sliders
+                        if(!id.includes('min-mag') && !id.includes('max-mag')) updatePlot();
+                    });
+                });
+
+                document.getElementById('color-select').addEventListener('change', () => updatePlot());
+                document.getElementById('color-mode').addEventListener('change', () => updatePlot());
+
+                // New Load Button Listener
+                document.getElementById('load-btn').addEventListener('click', () => fetchDataAndPlot(false));
+
+                // Initial Data Fetch
+                await fetchDataAndPlot(true);
+
+                // --- INTERACTION LOGIC ---
+                const graphDiv = document.getElementById('chart-container');
+                const stopRotation = () => { autoRotate = false; };
+
+                graphDiv.addEventListener('mousedown', stopRotation);
+                graphDiv.addEventListener('touchstart', stopRotation);
+                graphDiv.addEventListener('wheel', stopRotation);
+
+                // CLICK TO FOCUS
+                graphDiv.on('plotly_click', function(data){
+                    if(data.points.length === 0) return;
+                    const pt = data.points[0];
+                    stopRotation();
+
+                    const PLOT_SCALE = 3000 / EARTH_RADIUS;
+                    const cx = (pt.x / EARTH_RADIUS) * PLOT_SCALE;
+                    const cy = (pt.y / EARTH_RADIUS) * PLOT_SCALE;
+                    const cz = (pt.z / EARTH_RADIUS) * PLOT_SCALE;
+
+                    Plotly.relayout('chart-container', {
+                        'scene.camera.center': { x: cx, y: cy, z: cz },
+                    });
+                });
+
+                requestAnimationFrame(animateGlobe);
+
+            } catch (err) {
+                console.error("Critical Error:", err);
+                document.getElementById('loading').innerText = "Error initializing app.";
+            }
+        }
+
+        async function fetchDataAndPlot(isInitial = false) {
+            const loading = document.getElementById('loading');
+            loading.style.display = 'block';
+            loading.innerText = "Querying USGS...";
+
+            try {
+                // Construct API URL
+                const start = document.getElementById('start-date').value;
+                const end = document.getElementById('end-date').value;
+                const minMag = document.getElementById('min-mag-slider').value;
+                const maxMag = document.getElementById('max-mag-slider').value;
+
+                let url = `${USGS_BASE_URL}&starttime=${start}`;
+
+                const todayStr = new Date().toISOString().split('T')[0];
+                if (end) url += `&endtime=${end}`;
+
+                if(parseFloat(minMag) > 0) url += `&minmagnitude=${minMag}`;
+                if(parseFloat(maxMag) < 10) url += `&maxmagnitude=${maxMag}`;
+
+                console.log("Fetching: " + url);
+
+                const res = await fetch(url);
+                if (!res.ok) throw new Error("API Limit or Network Error");
+                const quakeJson = await res.json();
+
+                // Reset Stats - Now tracking Min/Max for both Mag and Depth
+                stats = {
+                    minMag: Infinity, maxMag: -Infinity,
+                    minDepth: Infinity, maxDepth: -Infinity,
+                    minTime: Infinity, maxTime: -Infinity,
+                    avgMag: 0
+                };
+
                 let totalMag = 0, count = 0;
                 let totalRealMag = 0;
+                let totalDepth = 0;
 
                 rawQuakeData = quakeJson.features.map(f => {
                     const realMag = f.properties.mag || 0;
@@ -255,13 +392,19 @@
                     const depth = f.geometry.coordinates[2];
                     const time = f.properties.time;
 
-                    if (visualMag > stats.maxMag) stats.maxMag = visualMag;
+                    // Update Statistics (Using Real Magnitude for accuracy)
+                    if (realMag < stats.minMag) stats.minMag = realMag;
+                    if (realMag > stats.maxMag) stats.maxMag = realMag;
+
+                    if (depth < stats.minDepth) stats.minDepth = depth;
                     if (depth > stats.maxDepth) stats.maxDepth = depth;
-                    if (time < minT) minT = time;
-                    if (time > maxT) maxT = time;
+
+                    if (time < stats.minTime) stats.minTime = time;
+                    if (time > stats.maxTime) stats.maxTime = time;
 
                     totalMag += visualMag;
                     totalRealMag += realMag;
+                    totalDepth += depth;
                     count++;
 
                     return {
@@ -275,98 +418,53 @@
                     };
                 });
 
+                // Handle edge case where no data is returned
+                if (count === 0) {
+                    stats.minMag = 0; stats.maxMag = 0;
+                    stats.minDepth = 0; stats.maxDepth = 0;
+                    stats.minTime = Date.now(); stats.maxTime = Date.now();
+                }
+
                 stats.avgMag = count > 0 ? (totalMag / count) : 0;
                 const realAvgMag = count > 0 ? (totalRealMag / count) : 0;
-                stats.minTime = minT;
-                stats.maxTime = maxT;
+                const avgDepth = count > 0 ? (totalDepth / count) : 0;
 
                 console.log("--- DATA REPORT ---");
                 console.log(`Total Earthquakes: ${count}`);
                 console.log(`Average Magnitude: ${realAvgMag.toFixed(3)}`);
+                console.log(`Minimum Magnitude: ${stats.minMag.toFixed(2)}`);
                 console.log(`Maximum Magnitude: ${stats.maxMag.toFixed(2)}`);
-                console.log(`Maximum Depth: ${stats.maxDepth} km`);
+                console.log(`Average Depth: ${avgDepth.toFixed(3)} km`);
+                console.log(`Minimum Depth: ${stats.minDepth.toFixed(2)} km`);
+                console.log(`Maximum Depth: ${stats.maxDepth.toFixed(2)} km`);
                 console.log(`Earliest Date: ${new Date(stats.minTime).toISOString()}`);
                 console.log(`Latest Date:   ${new Date(stats.maxTime).toISOString()}`);
                 console.log("-------------------");
 
                 document.getElementById('info-overlay').innerText =
-                    `Data: ${count} earthquakes (30 Days). Source: USGS.`;
-                document.getElementById('loading').style.display = 'none';
+                    `Data: ${count} earthquakes (${start} to ${end}). Source: USGS.`;
 
-                // Listeners
-                const inputs = ['size-slider', 'mag-slider', 'depth-slider', 'border-slider'];
-                inputs.forEach(id => {
-                    document.getElementById(id).addEventListener('input', () => { updateLabels(); updatePlot(); });
-                });
-                document.getElementById('color-select').addEventListener('change', () => updatePlot());
-                document.getElementById('color-mode').addEventListener('change', () => updatePlot());
-
-                // Initial Draw
-                updatePlot(true);
-
-                // --- INTERACTION LOGIC ---
-                const graphDiv = document.getElementById('chart-container');
-
-                const stopRotation = () => { autoRotate = false; };
-
-                // Stop on Click/Drag or Zoom
-                graphDiv.addEventListener('mousedown', stopRotation);
-                graphDiv.addEventListener('touchstart', stopRotation);
-                graphDiv.addEventListener('wheel', stopRotation);
-
-                // CLICK TO FOCUS
-                graphDiv.on('plotly_click', function(data){
-                    if(data.points.length === 0) return;
-                    const pt = data.points[0];
-                    stopRotation();
-
-                    // --- NORMALIZATION (Scale 0.5) ---
-                    // This maps the data coordinates (approx 6371) to camera space (approx 0.5)
-                    // doubling the previous 0.25 estimate.
-                    const PLOT_SCALE = 3000 / EARTH_RADIUS;
-
-                    const cx = (pt.x / EARTH_RADIUS) * PLOT_SCALE;
-                    const cy = (pt.y / EARTH_RADIUS) * PLOT_SCALE;
-                    const cz = (pt.z / EARTH_RADIUS) * PLOT_SCALE;
-
-                    // Eye offset (Zoom level relative to new center)
-                    const zoom = 1.3;
-
-                    Plotly.relayout('chart-container', {
-                        'scene.camera.center': { x: cx, y: cy, z: cz },
-                    });
-                });
-
-                requestAnimationFrame(animateGlobe);
+                updatePlot(isInitial);
+                loading.style.display = 'none';
 
             } catch (err) {
-                console.error("Critical Error:", err);
-                document.getElementById('loading').innerText = "Error loading data.";
+                console.error(err);
+                loading.innerText = "Error: " + err.message;
             }
         }
 
         function animateGlobe() {
             const graphDiv = document.getElementById('chart-container');
-
-            // Get LIVE camera (Always get it)
             const scene = graphDiv._fullLayout ? graphDiv._fullLayout.scene : null;
 
             if (scene && scene.camera) {
                 const eye = scene.camera.eye;
-
-                // --- CONTINUOUS LOGGING ---
                 frameCounter++;
-                if (frameCounter > 60) {
-                    const radius = Math.sqrt(eye.x*eye.x + eye.y*eye.y + eye.z*eye.z).toFixed(3);
-                    // console.log(`Cam X: ${eye.x.toFixed(2)}, Y: ${eye.y.toFixed(2)}, Z: ${eye.z.toFixed(2)}, R: ${radius}`);
-                    frameCounter = 0;
-                }
+                if (frameCounter > 60) frameCounter = 0;
 
-                // --- ROTATION ---
                 if (autoRotate) {
                     const cos = Math.cos(ROTATION_SPEED);
                     const sin = Math.sin(ROTATION_SPEED);
-
                     const newX = eye.x * cos - eye.y * sin;
                     const newY = eye.x * sin + eye.y * cos;
 
@@ -385,23 +483,18 @@
 
             const bIndex = parseInt(document.getElementById('border-slider').value);
             document.getElementById('border-val').innerText = BORDER_WIDTHS[bIndex];
+
+            // New Slider Labels
+            document.getElementById('min-mag-val').innerText = document.getElementById('min-mag-slider').value;
+            document.getElementById('max-mag-val').innerText = document.getElementById('max-mag-slider').value;
         }
 
         function calculateResponsiveCamera() {
             const width = window.innerWidth;
             const height = window.innerHeight;
             const aspectRatio = width / height;
-
-            // Base distance 0.9 (Close zoom)
             const baseDistance = 0.9;
-
-            let finalDistance;
-
-            if (aspectRatio >= 1) {
-                finalDistance = baseDistance;
-            } else {
-                finalDistance = Math.max(1.5, baseDistance / aspectRatio);
-            }
+            let finalDistance = (aspectRatio >= 1) ? baseDistance : Math.max(1.5, baseDistance / aspectRatio);
 
             return {
                 eye: { x: finalDistance, y: finalDistance, z: finalDistance * 0.5 },
@@ -420,7 +513,9 @@
             const colorMode = document.getElementById('color-mode').value;
 
             const qx = [], qy = [], qz = [], sizes = [], ghostSizes = [], colors = [], texts = [];
-            const MIDPOINT = stats.avgMag;
+
+            // Use Golden Ratio (1.618) for sizing balance as requested
+            const MIDPOINT = 1.618;
 
             for (const q of rawQuakeData) {
                 const r_quake = EARTH_RADIUS - (q.depth * depthScale);
@@ -434,13 +529,14 @@
                 }
                 const s = baseSize * (sizeFactor / 2.5);
                 sizes.push(s);
-                ghostSizes.push(Math.max(s, 10));
+                ghostSizes.push(Math.max(s * 2, 10));
 
                 if (colorMode === 'depth') colors.push(q.depth);
                 else if (colorMode === 'mag') colors.push(q.mag);
                 else colors.push(q.time);
 
-                const dateStr = new Date(q.time).toLocaleDateString();
+                const d = new Date(q.time);
+                const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
                 texts.push(
                     `<b>${q.place}</b><br>` +
                     `Date: ${dateStr}<br>` +
@@ -513,7 +609,6 @@
                 showlegend: false
             };
 
-            // Camera Capture
             const graphDiv = document.getElementById('chart-container');
             let userCamera = null;
             if (!isInitial && graphDiv._fullLayout && graphDiv._fullLayout.scene) {
