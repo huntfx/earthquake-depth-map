@@ -132,6 +132,25 @@
             <input type="range" id="max-mag-slider" min="0" max="10" step="0.1" value="10">
         </div>
 
+        <div class="control-group">
+            <label>Min Depth (km): <span id="min-depth-filter-val" class="val">0</span></label>
+            <input type="range" id="min-depth-filter" min="0" max="800" step="10" value="0">
+        </div>
+        <div class="control-group">
+            <label>Max Depth (km): <span id="max-depth-filter-val" class="val">800</span></label>
+            <input type="range" id="max-depth-filter" min="0" max="800" step="10" value="800">
+        </div>
+
+        <div class="control-group">
+            <label>Max Results</label>
+            <select id="limit-select">
+                <option value="1000">1,000</option>
+                <option value="5000">5,000</option>
+                <option value="10000" selected>10,000</option>
+                <option value="20000">20,000</option>
+            </select>
+        </div>
+
         <button id="load-btn">Load Data</button>
 
         <h3>Visualization</h3>
@@ -185,7 +204,7 @@
         // --- Constants ---
         const EARTH_RADIUS = 6371;
         // Dynamic Query URL (USGS API)
-        const USGS_BASE_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&orderby=time";
+        const USGS_BASE_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&orderby=magnitude";
         const BORDERS_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
 
         const BORDER_WIDTHS = [0, 1, 2, 4, 8, 16];
@@ -285,6 +304,8 @@
                 // Initialize new filters
                 document.getElementById('min-mag-slider').value = "0";
                 document.getElementById('max-mag-slider').value = "10";
+                document.getElementById('min-depth-filter').value = "0";
+                document.getElementById('max-depth-filter').value = "800";
 
                 updateLabels();
 
@@ -298,12 +319,13 @@
                 staticGridArrays = generateWireframeGrid();
 
                 // Setup Listeners
-                const inputs = ['size-slider', 'mag-slider', 'depth-slider', 'border-slider', 'min-mag-slider', 'max-mag-slider'];
+                const inputs = ['size-slider', 'mag-slider', 'depth-slider', 'border-slider', 'min-mag-slider', 'max-mag-slider', 'min-depth-filter', 'max-depth-filter'];
                 inputs.forEach(id => {
                     document.getElementById(id).addEventListener('input', () => {
                         updateLabels();
                         // Only auto-update plot for visual sliders, not data filter sliders
-                        if(!id.includes('min-mag') && !id.includes('max-mag')) updatePlot();
+                        const isFilter = id.includes('min') || id.includes('max') || id.includes('filter');
+                        if(!isFilter) updatePlot();
                     });
                 });
 
@@ -359,6 +381,9 @@
                 const end = document.getElementById('end-date').value;
                 const minMag = document.getElementById('min-mag-slider').value;
                 const maxMag = document.getElementById('max-mag-slider').value;
+                const minDepth = document.getElementById('min-depth-filter').value;
+                const maxDepth = document.getElementById('max-depth-filter').value;
+                const limit = document.getElementById('limit-select').value;
 
                 let url = `${USGS_BASE_URL}&starttime=${start}`;
 
@@ -367,6 +392,10 @@
 
                 if(parseFloat(minMag) > 0) url += `&minmagnitude=${minMag}`;
                 if(parseFloat(maxMag) < 10) url += `&maxmagnitude=${maxMag}`;
+
+                // Add new Depth and Limit parameters
+                url += `&mindepth=${minDepth}&maxdepth=${maxDepth}`;
+                url += `&limit=${limit}`;
 
                 console.log("Fetching: " + url);
 
@@ -487,6 +516,8 @@
             // New Slider Labels
             document.getElementById('min-mag-val').innerText = document.getElementById('min-mag-slider').value;
             document.getElementById('max-mag-val').innerText = document.getElementById('max-mag-slider').value;
+            document.getElementById('min-depth-filter-val').innerText = document.getElementById('min-depth-filter').value;
+            document.getElementById('max-depth-filter-val').innerText = document.getElementById('max-depth-filter').value;
         }
 
         function calculateResponsiveCamera() {
