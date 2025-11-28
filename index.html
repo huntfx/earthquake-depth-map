@@ -325,32 +325,21 @@
         // --- Data Generators ---
         function processBorders(geojson) {
             const bx = [], by = [], bz = [];
-
-            // Explicit Helper for single Polygon
-            function addPoly(poly) {
-                // poly is an array of Rings. poly[0] is exterior.
-                if(!poly || poly.length === 0) return;
-                const ring = poly[0];
-                ring.forEach(pt => {
-                    const [x, y, z] = latLonToXYZ(pt[1], pt[0], EARTH_RADIUS);
-                    bx.push(x); by.push(y); bz.push(z);
-                });
-                bx.push(null); by.push(null); bz.push(null);
-            }
-
             geojson.features.forEach(feature => {
-                const geom = feature.geometry;
-                if (!geom) return;
+                const geometry = feature.geometry;
+                if (!geometry) return;
 
-                if (geom.type === 'Polygon') {
-                    addPoly(geom.coordinates);
-                }
-                else if (geom.type === 'MultiPolygon') {
-                    // MultiPolygon is an Array of Polygons
-                    geom.coordinates.forEach(polygon => {
-                        addPoly(polygon);
+                // FIX: Removed extra array wrapping that caused distortion
+                const polygons = (geometry.type === 'Polygon') ? geometry.coordinates : geometry.coordinates;
+
+                polygons.forEach(poly => {
+                    const actualPoly = (geometry.type === 'MultiPolygon') ? poly[0] : poly;
+                    actualPoly.forEach(pt => {
+                        const [x, y, z] = latLonToXYZ(pt[1], pt[0], EARTH_RADIUS);
+                        bx.push(x); by.push(y); bz.push(z);
                     });
-                }
+                    bx.push(null); by.push(null); bz.push(null);
+                });
             });
             return { x: bx, y: by, z: bz };
         }
@@ -409,7 +398,7 @@
                 document.getElementById('mag-slider').value = "0.1";
                 document.getElementById('depth-slider').value = "2.5";
                 document.getElementById('border-slider').value = "1";
-                document.getElementById('plate-width-slider').value = "2"; // Default plate width index
+                document.getElementById('plate-width-slider').value = "2";
                 document.getElementById('color-select').value = "Hot";
                 document.getElementById('color-mode').value = "mag";
 
@@ -442,7 +431,6 @@
                 inputs.forEach(id => {
                     document.getElementById(id).addEventListener('input', () => {
                         updateLabels();
-                        // Only auto-update plot for visual sliders, not data filter sliders
                         const isFilter = id.includes('min') || id.includes('max') || id.includes('filter');
                         if(!isFilter) updatePlot();
                     });
@@ -461,16 +449,56 @@
                 const graphDiv = document.getElementById('chart-container');
                 const stopRotation = () => { autoRotate = false; };
 
-                graphDiv.addEventListener('mousedown', stopRotation);
-                graphDiv.addEventListener('touchstart', stopRotation);
-                graphDiv.addEventListener('wheel', stopRotation);
+                // State variables for interaction
+                let isMouseDown = false;
+                let isDragging = false;
+                let pendingClickTarget = null;
+                let startMousePos = { x:0, y:0 };
 
-                // CLICK TO FOCUS
-                graphDiv.on('plotly_click', function(data){
-                    if(data.points.length === 0) return;
-                    const pt = data.points[0];
+                // 1. Mouse Down: Reset state, stop rotation
+                graphDiv.addEventListener('mousedown', (e) => {
                     stopRotation();
+                    if(e.button === 0) { // Left click only
+                        isMouseDown = true;
+                        isDragging = false;
+                        pendingClickTarget = null; // Clear old target
+                        startMousePos = { x: e.clientX, y: e.clientY };
+                    }
+                });
 
+                // 2. Mouse Move: Detect dragging
+                graphDiv.addEventListener('mousemove', (e) => {
+                    if(isMouseDown) {
+                        const dx = Math.abs(e.clientX - startMousePos.x);
+                        const dy = Math.abs(e.clientY - startMousePos.y);
+                        // Tiny threshold just to ignore jitter, but treat any real move as drag
+                        if(dx > 3 || dy > 3) {
+                            isDragging = true;
+                            pendingClickTarget = null; // Invalidate any pending click
+                        }
+                    }
+                });
+
+                // 3. Plotly Click: Just capture the data, DO NOT MOVE yet
+                graphDiv.on('plotly_click', function(data){
+                    if(!data || !data.points || data.points.length === 0) return;
+
+                    // If we are currently holding the mouse down, save this target
+                    // It will be executed on mouseup if no drag occurred.
+                    pendingClickTarget = data.points[0];
+                });
+
+                // 4. Mouse Up: Execute the move if valid
+                window.addEventListener('mouseup', () => {
+                    if(isMouseDown && !isDragging && pendingClickTarget) {
+                        // VALID CLICK DETECTED
+                        executeCameraMove(pendingClickTarget);
+                    }
+                    isMouseDown = false;
+                    isDragging = false;
+                });
+
+                function executeCameraMove(pt) {
                     const PLOT_SCALE = 3000 / EARTH_RADIUS;
                     const cx = (pt.x / EARTH_RADIUS) * PLOT_SCALE;
                     const cy = (pt.y / EARTH_RADIUS) * PLOT_SCALE;
@@ -479,7 +507,10 @@
                     Plotly.relayout('chart-container', {
                         'scene.camera.center': { x: cx, y: cy, z: cz },
                     });
-                });
+                }
+
+                graphDiv.addEventListener('touchstart', stopRotation);
+                graphDiv.addEventListener('wheel', stopRotation);
 
                 requestAnimationFrame(animateGlobe);
 
