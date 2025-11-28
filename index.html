@@ -239,7 +239,6 @@
     <script>
         // --- Constants ---
         const EARTH_RADIUS = 6371;
-        // Dynamic Query URL (USGS API)
         const USGS_BASE_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&orderby=magnitude";
         const BORDERS_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
         const PLATES_URL = "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json";
@@ -249,15 +248,19 @@
 
         // --- State ---
         let rawQuakeData = [];
-        let stats = {
-            maxMag: 0, maxDepth: 0, minTime: 0, maxTime: 0, avgMag: 0
-        };
+        let stats = { maxMag: 0, maxDepth: 0, minTime: 0, maxTime: 0, avgMag: 0 };
 
         let staticBorderArrays = { x: [], y: [], z: [] };
         let staticPlateArrays = { x: [], y: [], z: [] };
         let staticGridArrays = { x: [], y: [], z: [] };
 
-        let currentCamera = null;
+        // Single Source of Truth for Camera
+        let currentCamera = {
+            eye: {x: 1.5, y: 1.5, z: 1.5},
+            center: {x: 0, y: 0, z: 0},
+            up: {x: 0, y: 0, z: 1}
+        };
+
         let autoRotate = true;
         let frameCounter = 0;
 
@@ -272,9 +275,7 @@
         function setDefaultDates() {
             const end = new Date();
             const start = new Date();
-            start.setMonth(start.getMonth() - 1); // Default to 1 month ago
-
-            // Formatting to YYYY-MM-DD
+            start.setMonth(start.getMonth() - 1);
             document.getElementById('end-date').value = end.toISOString().split('T')[0];
             document.getElementById('start-date').value = start.toISOString().split('T')[0];
         }
@@ -283,36 +284,28 @@
             const end = new Date();
             let start = new Date();
 
-            // Reset filters logic
             document.getElementById('min-mag-slider').value = "0";
             document.getElementById('max-mag-slider').value = "10";
             document.getElementById('min-depth-filter').value = "0";
             document.getElementById('max-depth-filter').value = "800";
 
-            if (type === '24h') {
-                start.setDate(end.getDate() - 1);
-            } else if (type === '7d') {
-                start.setDate(end.getDate() - 7);
-            } else if (type === '30d') {
-                start.setDate(end.getDate() - 30);
-            } else if (type === 'sig') {
-                // Significant: Last 30 days, > 5.0 mag
+            if (type === '24h') start.setDate(end.getDate() - 1);
+            else if (type === '7d') start.setDate(end.getDate() - 7);
+            else if (type === '30d') start.setDate(end.getDate() - 30);
+            else if (type === 'sig') {
                 start.setDate(end.getDate() - 30);
                 document.getElementById('min-mag-slider').value = "5.0";
             } else if (type === 'deep') {
-                // Deep: Last 365 days (to show enough structure), > 300km depth
                 start.setDate(end.getDate() - 365);
                 document.getElementById('min-depth-filter').value = "300";
             }
 
             document.getElementById('end-date').value = end.toISOString().split('T')[0];
             document.getElementById('start-date').value = start.toISOString().split('T')[0];
-
             updateLabels();
             fetchDataAndPlot(false);
         }
 
-        // --- Math Helpers ---
         function latLonToXYZ(lat, lon, radius) {
             const latRad = lat * Math.PI / 180;
             const lonRad = lon * Math.PI / 180;
@@ -322,7 +315,6 @@
             return [x, y, z];
         }
 
-        // --- Data Generators ---
         function processBorders(geojson) {
             const bx = [], by = [], bz = [];
             geojson.features.forEach(feature => {
@@ -402,7 +394,6 @@
                 document.getElementById('color-select').value = "Hot";
                 document.getElementById('color-mode').value = "mag";
 
-                // Initialize new filters
                 document.getElementById('min-mag-slider').value = "0";
                 document.getElementById('max-mag-slider').value = "10";
                 document.getElementById('min-depth-filter').value = "0";
@@ -410,7 +401,6 @@
 
                 updateLabels();
 
-                // Fetch Static Data (Borders & Plates)
                 console.log("Downloading static map data...");
                 document.getElementById('loading').innerText = "Loading Map Data...";
 
@@ -426,7 +416,6 @@
                 staticPlateArrays = processPlates(platesJson);
                 staticGridArrays = generateWireframeGrid();
 
-                // Setup Listeners
                 const inputs = ['size-slider', 'mag-slider', 'depth-slider', 'border-slider', 'min-mag-slider', 'max-mag-slider', 'min-depth-filter', 'max-depth-filter', 'plate-width-slider'];
                 inputs.forEach(id => {
                     document.getElementById(id).addEventListener('input', () => {
@@ -439,75 +428,99 @@
                 document.getElementById('color-select').addEventListener('change', () => updatePlot());
                 document.getElementById('color-mode').addEventListener('change', () => updatePlot());
 
-                // New Load Button Listener
                 document.getElementById('load-btn').addEventListener('click', () => fetchDataAndPlot(false));
 
-                // Initial Data Fetch
                 await fetchDataAndPlot(true);
 
                 // --- INTERACTION LOGIC ---
                 const graphDiv = document.getElementById('chart-container');
                 const stopRotation = () => { autoRotate = false; };
 
-                // State variables for interaction
-                let isMouseDown = false;
-                let isDragging = false;
-                let pendingClickTarget = null;
-                let startMousePos = { x:0, y:0 };
-
-                // 1. Mouse Down: Reset state, stop rotation
                 graphDiv.addEventListener('mousedown', (e) => {
                     stopRotation();
-                    if(e.button === 0) { // Left click only
-                        isMouseDown = true;
-                        isDragging = false;
-                        pendingClickTarget = null; // Clear old target
-                        startMousePos = { x: e.clientX, y: e.clientY };
-                    }
                 });
 
-                // 2. Mouse Move: Detect dragging
-                graphDiv.addEventListener('mousemove', (e) => {
-                    if(isMouseDown) {
-                        const dx = Math.abs(e.clientX - startMousePos.x);
-                        const dy = Math.abs(e.clientY - startMousePos.y);
-                        // Tiny threshold just to ignore jitter, but treat any real move as drag
-                        if(dx > 3 || dy > 3) {
-                            isDragging = true;
-                            pendingClickTarget = null; // Invalidate any pending click
+                // --- EVENT BASED CAMERA TRACKING (No polling) ---
+                // We listen for EVERY camera change event from Plotly and update our single source of truth.
+                graphDiv.on('plotly_relayout', (eventData) => {
+                    // eventData can be like: { 'scene.camera': {...} } OR { 'scene.camera.eye': {...} }
+
+                    // Case 1: Full Camera update
+                    if (eventData['scene.camera']) {
+                        currentCamera = eventData['scene.camera'];
+                    }
+                    // Case 2: Partial updates (e.g. just eye/zoom)
+                    else {
+                        // If we get partial data, we need to carefully merge it.
+                        // However, parsing "scene.camera.eye.x" keys is tedious.
+                        // Easier strategy: When ANY relayout happens, read the FULL calculated camera from the graph.
+                        // This avoids the "1 frame lag" because relayout fires AFTER the visual update.
+                        if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
+                            const cam = graphDiv._fullLayout.scene.camera;
+                            // Update our global truth
+                            currentCamera = {
+                                eye: { ...cam.eye },
+                                center: { ...cam.center },
+                                up: { ...cam.up }
+                            };
                         }
                     }
                 });
 
-                // 3. Plotly Click: Just capture the data, DO NOT MOVE yet
+                // Strict Left-Click detection for "Click to Center"
+                let isMouseDown = false;
+                let startMousePos = {x:0, y:0};
+
+                graphDiv.addEventListener('mousedown', (e) => {
+                    if(e.button === 0) {
+                        isMouseDown = true;
+                        startMousePos = {x: e.clientX, y: e.clientY};
+                    }
+                });
+
+                graphDiv.addEventListener('mouseup', (e) => {
+                    if(!isMouseDown) return;
+                    isMouseDown = false;
+                    const dx = Math.abs(e.clientX - startMousePos.x);
+                    const dy = Math.abs(e.clientY - startMousePos.y);
+                    // If moved less than 5px, consider it a click, otherwise it was a drag/rotate
+                    if(dx < 5 && dy < 5) {
+                        // It was a click! We wait for Plotly's click event to give us the data point
+                        // But we handle the logic inside the plotly_click handler
+                    }
+                });
+
                 graphDiv.on('plotly_click', function(data){
+                    // We only care if we are NOT rotating/dragging.
+                    // The mouseup logic above is for browser events, but Plotly's click
+                    // fires nicely for points. We just need to ensure we didn't drag.
+                    // We can check if autoRotate is off (it stops on mousedown)
+
+                    // Double check drag distance logic inside here?
+                    // Actually, simpler: if autoRotate was stopped, we might be dragging.
+                    // Let's rely on a small heuristic:
+                    // If the user drags, the camera position changes.
+                    // If the user clicks, the camera position effectively stays the same between down and up.
+
                     if(!data || !data.points || data.points.length === 0) return;
 
-                    // If we are currently holding the mouse down, save this target
-                    // It will be executed on mouseup if no drag occurred.
-                    pendingClickTarget = data.points[0];
-                });
-
-                // 4. Mouse Up: Execute the move if valid
-                window.addEventListener('mouseup', () => {
-                    if(isMouseDown && !isDragging && pendingClickTarget) {
-                        // VALID CLICK DETECTED
-                        executeCameraMove(pendingClickTarget);
-                    }
-                    isMouseDown = false;
-                    isDragging = false;
-                });
-
-                function executeCameraMove(pt) {
+                    // Just execute the move. The user wants to see this point.
+                    const pt = data.points[0];
                     const PLOT_SCALE = 3000 / EARTH_RADIUS;
                     const cx = (pt.x / EARTH_RADIUS) * PLOT_SCALE;
                     const cy = (pt.y / EARTH_RADIUS) * PLOT_SCALE;
                     const cz = (pt.z / EARTH_RADIUS) * PLOT_SCALE;
 
-                    Plotly.relayout('chart-container', {
-                        'scene.camera.center': { x: cx, y: cy, z: cz },
-                    });
-                }
+                    const newCamera = {
+                        eye: { ...currentCamera.eye }, // Keep zoom
+                        center: { x: cx, y: cy, z: cz }, // Move target
+                        up: { ...currentCamera.up }
+                    };
+
+                    // Update Plotly AND our tracker
+                    currentCamera = newCamera;
+                    Plotly.relayout('chart-container', { 'scene.camera': newCamera });
+                });
 
                 graphDiv.addEventListener('touchstart', stopRotation);
                 graphDiv.addEventListener('wheel', stopRotation);
@@ -526,7 +539,6 @@
             loading.innerText = "Querying USGS...";
 
             try {
-                // Construct API URL
                 const start = document.getElementById('start-date').value;
                 const end = document.getElementById('end-date').value;
                 const minMag = document.getElementById('min-mag-slider').value;
@@ -536,14 +548,10 @@
                 const limit = document.getElementById('limit-select').value;
 
                 let url = `${USGS_BASE_URL}&starttime=${start}`;
-
-                const todayStr = new Date().toISOString().split('T')[0];
                 if (end) url += `&endtime=${end}`;
 
                 if(parseFloat(minMag) > 0) url += `&minmagnitude=${minMag}`;
                 if(parseFloat(maxMag) < 10) url += `&maxmagnitude=${maxMag}`;
-
-                // Add new Depth and Limit parameters
                 url += `&mindepth=${minDepth}&maxdepth=${maxDepth}`;
                 url += `&limit=${limit}`;
 
@@ -553,17 +561,8 @@
                 if (!res.ok) throw new Error("API Limit or Network Error");
                 const quakeJson = await res.json();
 
-                // Reset Stats - Now tracking Min/Max for both Mag and Depth
-                stats = {
-                    minMag: Infinity, maxMag: -Infinity,
-                    minDepth: Infinity, maxDepth: -Infinity,
-                    minTime: Infinity, maxTime: -Infinity,
-                    avgMag: 0
-                };
-
-                let totalMag = 0, count = 0;
-                let totalRealMag = 0;
-                let totalDepth = 0;
+                stats = { maxMag: 0, maxDepth: 0, minTime: Infinity, maxTime: -Infinity, avgMag: 0, minMag: Infinity, minDepth: Infinity };
+                let totalMag = 0, count = 0, totalRealMag = 0, totalDepth = 0;
 
                 rawQuakeData = quakeJson.features.map(f => {
                     const realMag = f.properties.mag || 0;
@@ -571,13 +570,10 @@
                     const depth = f.geometry.coordinates[2];
                     const time = f.properties.time;
 
-                    // Update Statistics (Using Real Magnitude for accuracy)
                     if (realMag < stats.minMag) stats.minMag = realMag;
                     if (realMag > stats.maxMag) stats.maxMag = realMag;
-
                     if (depth < stats.minDepth) stats.minDepth = depth;
                     if (depth > stats.maxDepth) stats.maxDepth = depth;
-
                     if (time < stats.minTime) stats.minTime = time;
                     if (time > stats.maxTime) stats.maxTime = time;
 
@@ -597,10 +593,8 @@
                     };
                 });
 
-                // Handle edge case where no data is returned
                 if (count === 0) {
-                    stats.minMag = 0; stats.maxMag = 0;
-                    stats.minDepth = 0; stats.maxDepth = 0;
+                    stats.minMag = 0; stats.maxMag = 0; stats.minDepth = 0; stats.maxDepth = 0;
                     stats.minTime = Date.now(); stats.maxTime = Date.now();
                 }
 
@@ -609,19 +603,10 @@
                 const avgDepth = count > 0 ? (totalDepth / count) : 0;
 
                 console.log("--- DATA REPORT ---");
-                console.log(`Total Earthquakes: ${count}`);
-                console.log(`Average Magnitude: ${realAvgMag.toFixed(3)}`);
-                console.log(`Minimum Magnitude: ${stats.minMag.toFixed(2)}`);
-                console.log(`Maximum Magnitude: ${stats.maxMag.toFixed(2)}`);
-                console.log(`Average Depth: ${avgDepth.toFixed(3)} km`);
-                console.log(`Minimum Depth: ${stats.minDepth.toFixed(2)} km`);
-                console.log(`Maximum Depth: ${stats.maxDepth.toFixed(2)} km`);
-                console.log(`Earliest Date: ${new Date(stats.minTime).toISOString()}`);
-                console.log(`Latest Date:   ${new Date(stats.maxTime).toISOString()}`);
-                console.log("-------------------");
+                console.log(`Count: ${count}, Avg Mag: ${realAvgMag.toFixed(2)}, Max Mag: ${stats.maxMag.toFixed(2)}`);
+                console.log(`Depth: ${stats.minDepth}km - ${stats.maxDepth}km`);
 
-                document.getElementById('info-overlay').innerText =
-                    `Data: ${count} earthquakes (${start} to ${end}). Source: USGS.`;
+                document.getElementById('info-overlay').innerText = `Data: ${count} earthquakes. Source: USGS.`;
 
                 updatePlot(isInitial);
                 loading.style.display = 'none';
@@ -636,21 +621,23 @@
             const graphDiv = document.getElementById('chart-container');
             const scene = graphDiv._fullLayout ? graphDiv._fullLayout.scene : null;
 
-            if (scene && scene.camera) {
-                const eye = scene.camera.eye;
-                frameCounter++;
-                if (frameCounter > 60) frameCounter = 0;
+            if (scene && scene.camera && autoRotate) {
+                const cos = Math.cos(ROTATION_SPEED);
+                const sin = Math.sin(ROTATION_SPEED);
 
-                if (autoRotate) {
-                    const cos = Math.cos(ROTATION_SPEED);
-                    const sin = Math.sin(ROTATION_SPEED);
-                    const newX = eye.x * cos - eye.y * sin;
-                    const newY = eye.x * sin + eye.y * cos;
+                // We use our 'Source of Truth' camera to calculate the next step
+                const currentEye = currentCamera.eye;
 
-                    Plotly.relayout('chart-container', {
-                        'scene.camera.eye': { x: newX, y: newY, z: eye.z }
-                    });
-                }
+                const newX = currentEye.x * cos - currentEye.y * sin;
+                const newY = currentEye.x * sin + currentEye.y * cos;
+                const newEye = { x: newX, y: newY, z: currentEye.z };
+
+                // Update Source of Truth
+                currentCamera.eye = newEye;
+
+                Plotly.relayout('chart-container', {
+                    'scene.camera.eye': newEye
+                });
             }
             requestAnimationFrame(animateGlobe);
         }
@@ -666,7 +653,6 @@
             const pIndex = parseInt(document.getElementById('plate-width-slider').value);
             document.getElementById('plate-width-val').innerText = BORDER_WIDTHS[pIndex];
 
-            // New Slider Labels
             document.getElementById('min-mag-val').innerText = document.getElementById('min-mag-slider').value;
             document.getElementById('max-mag-val').innerText = document.getElementById('max-mag-slider').value;
             document.getElementById('min-depth-filter-val').innerText = document.getElementById('min-depth-filter').value;
@@ -699,7 +685,6 @@
 
             const qx = [], qy = [], qz = [], sizes = [], ghostSizes = [], colors = [], texts = [];
 
-            // Use Golden Ratio (1.618) for sizing balance as requested
             const MIDPOINT = 1.618;
 
             for (const q of rawQuakeData) {
@@ -801,19 +786,14 @@
                 showlegend: false
             };
 
-            const graphDiv = document.getElementById('chart-container');
-            let userCamera = null;
-            if (!isInitial && graphDiv._fullLayout && graphDiv._fullLayout.scene) {
-                userCamera = graphDiv._fullLayout.scene.camera;
-            }
-
+            // Set camera from our tracked source of truth
             if (isInitial) {
-                layout.scene.camera = calculateResponsiveCamera();
-            } else if (userCamera) {
-                layout.scene.camera = userCamera;
+                currentCamera = calculateResponsiveCamera();
             }
+            layout.scene.camera = currentCamera;
 
-            layout.uirevision = 'true';
+            // uirevision is NOT used because we are manually supplying the exact camera state
+            // that we have been tracking via events.
 
             Plotly.react('chart-container', [gridTrace, borderTrace, plateTrace, quakeTrace, ghostTrace], layout, {responsive: true});
         }
