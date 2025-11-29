@@ -231,6 +231,11 @@
             <label>Plate Width: <span id="plate-width-val" class="val">2</span></label>
             <input type="range" id="plate-width-slider" min="0" max="4" step="1" value="2">
         </div>
+
+        <div class="control-group">
+            <label>Label Size: <span id="label-size-val" class="val">12</span></label>
+            <input type="range" id="label-size-slider" min="0" max="24" step="1" value="0">
+        </div>
     </div>
 
     <div id="chart-container"></div>
@@ -251,6 +256,7 @@
         let stats = { maxMag: 0, maxDepth: 0, minTime: 0, maxTime: 0, avgMag: 0 };
 
         let staticBorderArrays = { x: [], y: [], z: [] };
+        let staticLabelArrays = { x: [], y: [], z: [], text: [] }; // New label state
         let staticPlateArrays = { x: [], y: [], z: [] };
         let staticGridArrays = { x: [], y: [], z: [] };
 
@@ -317,23 +323,88 @@
 
         function processBorders(geojson) {
             const bx = [], by = [], bz = [];
+            const lx = [], ly = [], lz = [], lt = [];
+
             geojson.features.forEach(feature => {
                 const geometry = feature.geometry;
                 if (!geometry) return;
 
-                // FIX: Removed extra array wrapping that caused distortion
-                const polygons = (geometry.type === 'Polygon') ? geometry.coordinates : geometry.coordinates;
+                const name = feature.properties ? feature.properties.name : null;
+                const type = geometry.type;
 
-                polygons.forEach(poly => {
-                    const actualPoly = (geometry.type === 'MultiPolygon') ? poly[0] : poly;
-                    actualPoly.forEach(pt => {
-                        const [x, y, z] = latLonToXYZ(pt[1], pt[0], EARTH_RADIUS);
+                // We'll store potential label points for this country (one per disjoint landmass)
+                const candidates = [];
+
+                // Helper to process a ring (array of [lon, lat])
+                // Returns object with centroid and approx area, or null
+                const processRing = (ring) => {
+                    let rMinLat = 90, rMaxLat = -90, rMinLon = 180, rMaxLon = -180;
+                    let count = 0;
+
+                    ring.forEach(pt => {
+                        const lon = pt[0];
+                        const lat = pt[1];
+
+                        // Visuals: Add to border arrays
+                        const [x, y, z] = latLonToXYZ(lat, lon, EARTH_RADIUS);
                         bx.push(x); by.push(y); bz.push(z);
+
+                        // Calc bounds for this specific ring to find its center
+                        if (lat < rMinLat) rMinLat = lat;
+                        if (lat > rMaxLat) rMaxLat = lat;
+                        if (lon < rMinLon) rMinLon = lon;
+                        if (lon > rMaxLon) rMaxLon = lon;
+                        count++;
                     });
+                    // Break line strip for rendering
                     bx.push(null); by.push(null); bz.push(null);
-                });
+
+                    if (count === 0) return null;
+
+                    const latSpan = rMaxLat - rMinLat;
+                    const lonSpan = rMaxLon - rMinLon;
+                    // Approximate area heuristic (degrees squared)
+                    const area = latSpan * lonSpan;
+
+                    return {
+                        lat: (rMinLat + rMaxLat) / 2,
+                        lon: (rMinLon + rMaxLon) / 2,
+                        area: area
+                    };
+                };
+
+                if (type === 'Polygon') {
+                    // Polygon: coordinates = [ [outer...], [inner...] ]
+                    const ring = geometry.coordinates[0];
+                    const data = processRing(ring);
+                    if (data) candidates.push(data);
+                } else if (type === 'MultiPolygon') {
+                    // MultiPolygon: coordinates = [ [ [outer..], [inner..] ], ... ]
+                    geometry.coordinates.forEach(poly => {
+                        const ring = poly[0];
+                        const data = processRing(ring);
+                        if (data) candidates.push(data);
+                    });
+                }
+
+                // Smart Labeling Logic:
+                // Only label the LARGEST landmass for each country.
+                if (name && candidates.length > 0) {
+                    // Sort by area size descending (Largest landmass first)
+                    candidates.sort((a, b) => b.area - a.area);
+
+                    const largest = candidates[0];
+
+                    const [cx, cy, cz] = latLonToXYZ(largest.lat, largest.lon, EARTH_RADIUS * 1.01);
+                    lx.push(cx); ly.push(cy); lz.push(cz);
+                    lt.push(name);
+                }
             });
-            return { x: bx, y: by, z: bz };
+
+            return {
+                borders: { x: bx, y: by, z: bz },
+                labels: { x: lx, y: ly, z: lz, text: lt }
+            };
         }
 
         function processPlates(geojson) {
@@ -399,6 +470,10 @@
                 document.getElementById('min-depth-filter').value = "0";
                 document.getElementById('max-depth-filter').value = "800";
 
+                // Initialize label size to 0 (hidden) by default, or small if preferred.
+                // Set to 10 so user sees them as per request, or 0 if they want to enable manually.
+                document.getElementById('label-size-slider').value = "0";
+
                 updateLabels();
 
                 console.log("Downloading static map data...");
@@ -412,11 +487,14 @@
                 const borderJson = await borderRes.json();
                 const platesJson = await platesRes.json();
 
-                staticBorderArrays = processBorders(borderJson);
+                const processedBorders = processBorders(borderJson);
+                staticBorderArrays = processedBorders.borders;
+                staticLabelArrays = processedBorders.labels;
+
                 staticPlateArrays = processPlates(platesJson);
                 staticGridArrays = generateWireframeGrid();
 
-                const inputs = ['size-slider', 'mag-slider', 'depth-slider', 'border-slider', 'min-mag-slider', 'max-mag-slider', 'min-depth-filter', 'max-depth-filter', 'plate-width-slider'];
+                const inputs = ['size-slider', 'mag-slider', 'depth-slider', 'border-slider', 'min-mag-slider', 'max-mag-slider', 'min-depth-filter', 'max-depth-filter', 'plate-width-slider', 'label-size-slider'];
                 inputs.forEach(id => {
                     document.getElementById(id).addEventListener('input', () => {
                         updateLabels();
@@ -441,23 +519,13 @@
                 });
 
                 // --- EVENT BASED CAMERA TRACKING (No polling) ---
-                // We listen for EVERY camera change event from Plotly and update our single source of truth.
                 graphDiv.on('plotly_relayout', (eventData) => {
-                    // eventData can be like: { 'scene.camera': {...} } OR { 'scene.camera.eye': {...} }
-
-                    // Case 1: Full Camera update
                     if (eventData['scene.camera']) {
                         currentCamera = eventData['scene.camera'];
                     }
-                    // Case 2: Partial updates (e.g. just eye/zoom)
                     else {
-                        // If we get partial data, we need to carefully merge it.
-                        // However, parsing "scene.camera.eye.x" keys is tedious.
-                        // Easier strategy: When ANY relayout happens, read the FULL calculated camera from the graph.
-                        // This avoids the "1 frame lag" because relayout fires AFTER the visual update.
                         if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
                             const cam = graphDiv._fullLayout.scene.camera;
-                            // Update our global truth
                             currentCamera = {
                                 eye: { ...cam.eye },
                                 center: { ...cam.center },
@@ -483,28 +551,14 @@
                     isMouseDown = false;
                     const dx = Math.abs(e.clientX - startMousePos.x);
                     const dy = Math.abs(e.clientY - startMousePos.y);
-                    // If moved less than 5px, consider it a click, otherwise it was a drag/rotate
                     if(dx < 5 && dy < 5) {
-                        // It was a click! We wait for Plotly's click event to give us the data point
-                        // But we handle the logic inside the plotly_click handler
+                        // Click logic handled in plotly_click
                     }
                 });
 
                 graphDiv.on('plotly_click', function(data){
-                    // We only care if we are NOT rotating/dragging.
-                    // The mouseup logic above is for browser events, but Plotly's click
-                    // fires nicely for points. We just need to ensure we didn't drag.
-                    // We can check if autoRotate is off (it stops on mousedown)
-
-                    // Double check drag distance logic inside here?
-                    // Actually, simpler: if autoRotate was stopped, we might be dragging.
-                    // Let's rely on a small heuristic:
-                    // If the user drags, the camera position changes.
-                    // If the user clicks, the camera position effectively stays the same between down and up.
-
                     if(!data || !data.points || data.points.length === 0) return;
 
-                    // Just execute the move. The user wants to see this point.
                     const pt = data.points[0];
                     const PLOT_SCALE = 3000 / EARTH_RADIUS;
                     const cx = (pt.x / EARTH_RADIUS) * PLOT_SCALE;
@@ -517,7 +571,6 @@
                         up: { ...currentCamera.up }
                     };
 
-                    // Update Plotly AND our tracker
                     currentCamera = newCamera;
                     Plotly.relayout('chart-container', { 'scene.camera': newCamera });
                 });
@@ -625,14 +678,12 @@
                 const cos = Math.cos(ROTATION_SPEED);
                 const sin = Math.sin(ROTATION_SPEED);
 
-                // We use our 'Source of Truth' camera to calculate the next step
                 const currentEye = currentCamera.eye;
 
                 const newX = currentEye.x * cos - currentEye.y * sin;
                 const newY = currentEye.x * sin + currentEye.y * cos;
                 const newEye = { x: newX, y: newY, z: currentEye.z };
 
-                // Update Source of Truth
                 currentCamera.eye = newEye;
 
                 Plotly.relayout('chart-container', {
@@ -652,6 +703,10 @@
 
             const pIndex = parseInt(document.getElementById('plate-width-slider').value);
             document.getElementById('plate-width-val').innerText = BORDER_WIDTHS[pIndex];
+
+            // New label control
+            const lSize = parseInt(document.getElementById('label-size-slider').value);
+            document.getElementById('label-size-val').innerText = lSize > 0 ? lSize + "px" : "Off";
 
             document.getElementById('min-mag-val').innerText = document.getElementById('min-mag-slider').value;
             document.getElementById('max-mag-val').innerText = document.getElementById('max-mag-slider').value;
@@ -679,6 +734,7 @@
             const depthScale = parseFloat(document.getElementById('depth-slider').value);
             const borderWidth = BORDER_WIDTHS[parseInt(document.getElementById('border-slider').value)];
             const plateWidth = BORDER_WIDTHS[parseInt(document.getElementById('plate-width-slider').value)];
+            const labelSize = parseInt(document.getElementById('label-size-slider').value);
 
             const selectedPalette = document.getElementById('color-select').value;
             const colorMode = document.getElementById('color-mode').value;
@@ -754,6 +810,23 @@
                 visible: plateWidth > 0
             };
 
+            // New Country Labels Trace
+            const labelTrace = {
+                type: 'scatter3d',
+                mode: 'text',
+                x: staticLabelArrays.x,
+                y: staticLabelArrays.y,
+                z: staticLabelArrays.z,
+                text: staticLabelArrays.text,
+                textfont: {
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    size: labelSize,
+                    family: 'sans-serif'
+                },
+                hoverinfo: 'none',
+                visible: labelSize > 0 // Hide if size is 0
+            };
+
             const quakeTrace = {
                 type: 'scatter3d', mode: 'markers',
                 x: qx, y: qy, z: qz,
@@ -786,16 +859,12 @@
                 showlegend: false
             };
 
-            // Set camera from our tracked source of truth
             if (isInitial) {
                 currentCamera = calculateResponsiveCamera();
             }
             layout.scene.camera = currentCamera;
 
-            // uirevision is NOT used because we are manually supplying the exact camera state
-            // that we have been tracking via events.
-
-            Plotly.react('chart-container', [gridTrace, borderTrace, plateTrace, quakeTrace, ghostTrace], layout, {responsive: true});
+            Plotly.react('chart-container', [gridTrace, borderTrace, plateTrace, labelTrace, quakeTrace, ghostTrace], layout, {responsive: true});
         }
 
         initApp();
