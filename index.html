@@ -222,19 +222,19 @@
             <input type="range" id="depth-slider" min="1" max="5" step="0.5">
         </div>
 
-        <div class="control-group">
-            <label>Border Width: <span id="border-val" class="val">1</span></label>
-            <input type="range" id="border-slider" min="0" max="4" step="1" value="1">
+        <div class="checkbox-group">
+            <label for="borders-checkbox">Country Borders</label>
+            <input type="checkbox" id="borders-checkbox" checked>
         </div>
 
-        <div class="control-group">
-            <label>Plate Width: <span id="plate-width-val" class="val">2</span></label>
-            <input type="range" id="plate-width-slider" min="0" max="4" step="1" value="2">
+        <div class="checkbox-group">
+            <label for="labels-checkbox">Country Names</label>
+            <input type="checkbox" id="labels-checkbox">
         </div>
 
-        <div class="control-group">
-            <label>Label Size: <span id="label-size-val" class="val">12</span></label>
-            <input type="range" id="label-size-slider" min="0" max="24" step="1" value="0">
+        <div class="checkbox-group">
+            <label for="plates-checkbox">Tectonic Plates</label>
+            <input type="checkbox" id="plates-checkbox" checked>
         </div>
     </div>
 
@@ -460,8 +460,6 @@
                 document.getElementById('size-slider').value = "2.5";
                 document.getElementById('mag-slider').value = "0.1";
                 document.getElementById('depth-slider').value = "2.5";
-                document.getElementById('border-slider').value = "1";
-                document.getElementById('plate-width-slider').value = "2";
                 document.getElementById('color-select').value = "Hot";
                 document.getElementById('color-mode').value = "mag";
 
@@ -470,9 +468,10 @@
                 document.getElementById('min-depth-filter').value = "0";
                 document.getElementById('max-depth-filter').value = "800";
 
-                // Initialize label size to 0 (hidden) by default, or small if preferred.
-                // Set to 10 so user sees them as per request, or 0 if they want to enable manually.
-                document.getElementById('label-size-slider').value = "0";
+                // Initialize checkboxes
+                document.getElementById('borders-checkbox').checked = true;
+                document.getElementById('plates-checkbox').checked = true;
+                document.getElementById('labels-checkbox').checked = false;
 
                 updateLabels();
 
@@ -494,7 +493,7 @@
                 staticPlateArrays = processPlates(platesJson);
                 staticGridArrays = generateWireframeGrid();
 
-                const inputs = ['size-slider', 'mag-slider', 'depth-slider', 'border-slider', 'min-mag-slider', 'max-mag-slider', 'min-depth-filter', 'max-depth-filter', 'plate-width-slider', 'label-size-slider'];
+                const inputs = ['size-slider', 'mag-slider', 'depth-slider', 'min-mag-slider', 'max-mag-slider', 'min-depth-filter', 'max-depth-filter'];
                 inputs.forEach(id => {
                     document.getElementById(id).addEventListener('input', () => {
                         updateLabels();
@@ -502,6 +501,11 @@
                         if(!isFilter) updatePlot();
                     });
                 });
+
+                // Listen for checkbox change
+                document.getElementById('labels-checkbox').addEventListener('change', () => updatePlot());
+                document.getElementById('borders-checkbox').addEventListener('change', () => updatePlot());
+                document.getElementById('plates-checkbox').addEventListener('change', () => updatePlot());
 
                 document.getElementById('color-select').addEventListener('change', () => updatePlot());
                 document.getElementById('color-mode').addEventListener('change', () => updatePlot());
@@ -698,16 +702,6 @@
             document.getElementById('mag-val').innerText = parseFloat(document.getElementById('mag-slider').value).toFixed(2);
             document.getElementById('depth-val').innerText = parseFloat(document.getElementById('depth-slider').value).toFixed(1);
 
-            const bIndex = parseInt(document.getElementById('border-slider').value);
-            document.getElementById('border-val').innerText = BORDER_WIDTHS[bIndex];
-
-            const pIndex = parseInt(document.getElementById('plate-width-slider').value);
-            document.getElementById('plate-width-val').innerText = BORDER_WIDTHS[pIndex];
-
-            // New label control
-            const lSize = parseInt(document.getElementById('label-size-slider').value);
-            document.getElementById('label-size-val').innerText = lSize > 0 ? lSize + "px" : "Off";
-
             document.getElementById('min-mag-val').innerText = document.getElementById('min-mag-slider').value;
             document.getElementById('max-mag-val').innerText = document.getElementById('max-mag-slider').value;
             document.getElementById('min-depth-filter-val').innerText = document.getElementById('min-depth-filter').value;
@@ -732,9 +726,12 @@
             const baseSize = parseFloat(document.getElementById('size-slider').value);
             const magBonusScale = parseFloat(document.getElementById('mag-slider').value);
             const depthScale = parseFloat(document.getElementById('depth-slider').value);
-            const borderWidth = BORDER_WIDTHS[parseInt(document.getElementById('border-slider').value)];
-            const plateWidth = BORDER_WIDTHS[parseInt(document.getElementById('plate-width-slider').value)];
-            const labelSize = parseInt(document.getElementById('label-size-slider').value);
+
+            // Checkbox logic replacing slider logic
+            const borderWidth = document.getElementById('borders-checkbox').checked ? 1 : 0;
+            const plateWidth = document.getElementById('plates-checkbox').checked ? 2 : 0;
+            const showLabels = document.getElementById('labels-checkbox').checked;
+            const labelSize = showLabels ? 12 : 0;
 
             const selectedPalette = document.getElementById('color-select').value;
             const colorMode = document.getElementById('color-mode').value;
@@ -819,7 +816,7 @@
                 z: staticLabelArrays.z,
                 text: staticLabelArrays.text,
                 textfont: {
-                    color: 'rgba(255, 255, 255, 0.7)',
+                    color: 'rgba(180, 180, 180, 0.9)', // Adjusted color (less bright white)
                     size: labelSize,
                     family: 'sans-serif'
                 },
