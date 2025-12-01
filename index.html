@@ -41,6 +41,44 @@
         }
         #theme-btn:hover { background: rgba(0, 255, 255, 0.2); }
 
+        /* ROTATION TOGGLE BUTTON */
+        #rotate-btn {
+            position: absolute; top: 15px; right: 65px;
+            background: rgba(0, 0, 0, 0.6);
+            color: cyan;
+            border: 1px solid cyan;
+            border-radius: 4px;
+            font-size: 18px;
+            padding: 7px 12px 3px 12px;
+            cursor: pointer;
+            z-index: 1001;
+            transition: all 0.2s;
+            width: 40px;
+            text-align: center;
+            height: 41px;
+            box-sizing: border-box;
+        }
+        #rotate-btn:hover { background: rgba(0, 255, 255, 0.2); }
+
+        /* RESET VIEW BUTTON */
+        #reset-btn {
+            position: absolute; top: 15px; right: 115px;
+            background: rgba(0, 0, 0, 0.6);
+            color: cyan;
+            border: 1px solid cyan;
+            border-radius: 4px;
+            font-size: 20px;
+            padding: 5px 12px;
+            cursor: pointer;
+            z-index: 1001;
+            transition: all 0.2s;
+            width: 40px;
+            text-align: center;
+            height: 41px;
+            box-sizing: border-box;
+        }
+        #reset-btn:hover { background: rgba(0, 255, 255, 0.2); }
+
         #side-panel {
             position: fixed;
             top: 0; left: -340px;
@@ -199,7 +237,7 @@
             color: #008080; /* Teal */
             border-color: #008080;
         }
-        body.light-mode #theme-btn {
+        body.light-mode #theme-btn, body.light-mode #rotate-btn, body.light-mode #reset-btn {
             background: rgba(255, 255, 255, 0.8);
             color: #333;
             border-color: #333;
@@ -299,7 +337,9 @@
 
     <div id="loading">Initializing...</div>
 
-    <!-- THEME TOGGLE -->
+    <!-- BUTTONS -->
+    <button id="reset-btn">⟳</button>
+    <button id="rotate-btn">❚❚</button>
     <button id="theme-btn">☀</button>
 
     <!-- POPUP -->
@@ -534,6 +574,7 @@
 
                 // Stop rotation so user stays on target
                 autoRotate = false;
+                document.getElementById('rotate-btn').innerHTML = '▶';
 
                 // Feedback
                 const originalText = btn.innerText;
@@ -792,6 +833,24 @@
                     updatePlot();
                 });
 
+                // Rotation Toggle
+                document.getElementById('rotate-btn').addEventListener('click', () => {
+                    autoRotate = !autoRotate;
+                    const btn = document.getElementById('rotate-btn');
+                    btn.innerHTML = autoRotate ? '❚❚' : '▶';
+                });
+
+                // Reset View
+                document.getElementById('reset-btn').addEventListener('click', () => {
+                    const defaultCam = calculateResponsiveCamera();
+                    currentCamera = defaultCam;
+                    Plotly.relayout('chart-container', { 'scene.camera': defaultCam });
+
+                    // Auto-play on reset
+                    autoRotate = true;
+                    document.getElementById('rotate-btn').innerHTML = '❚❚';
+                });
+
                 document.getElementById('color-select').addEventListener('change', () => updatePlot());
                 document.getElementById('color-mode').addEventListener('change', () => updatePlot());
 
@@ -807,7 +866,10 @@
 
                 // --- INTERACTION LOGIC ---
                 const graphDiv = document.getElementById('chart-container');
-                const stopRotation = () => { autoRotate = false; };
+                const stopRotation = () => {
+                    autoRotate = false;
+                    document.getElementById('rotate-btn').innerHTML = '▶';
+                };
 
                 graphDiv.addEventListener('mousedown', (e) => {
                     stopRotation();
