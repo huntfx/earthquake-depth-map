@@ -63,11 +63,20 @@
             height: 4px; background: #444; border-radius: 2px;
         }
 
-        input[type=date] {
+        input[type=date], input[type=text] {
             width: 100%; background: #333; color: white; border: 1px solid #555;
             padding: 5px; border-radius: 3px; font-family: sans-serif;
             box-sizing: border-box;
         }
+        
+        /* Search Box Specifics */
+        #search-container { display: flex; gap: 5px; }
+        #search-btn {
+            background: #444; color: cyan; border: 1px solid #555; cursor: pointer;
+            padding: 5px 10px; border-radius: 3px; font-weight: bold; text-transform: uppercase;
+            font-size: 11px; transition: all 0.2s;
+        }
+        #search-btn:hover { background: #555; border-color: cyan; }
 
         .checkbox-group {
             display: flex;
@@ -116,7 +125,7 @@
             padding: 5px 10px;
             border-radius: 4px;
         }
-
+        
         #loading {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             color: cyan; font-size: 24px; font-weight: bold;
@@ -147,8 +156,8 @@
         #quake-info p { margin: 6px 0; font-size: 13px; color: #ccc; }
         #quake-info strong { color: white; }
         #quake-info a {
-            display: block; margin-top: 12px; color: black; background: cyan;
-            text-align: center; padding: 8px; text-decoration: none;
+            display: block; margin-top: 12px; color: black; background: cyan; 
+            text-align: center; padding: 8px; text-decoration: none; 
             border-radius: 3px; font-weight: bold; font-size: 12px; transition: background 0.2s;
         }
         #quake-info a:hover { background: #ccffff; }
@@ -177,6 +186,16 @@
     <div id="side-panel">
         <button id="close-btn">×</button>
         <h2>Earthquake<br>Depth Map</h2>
+
+        <!-- Search Feature -->
+        <div class="control-group">
+            <label>Search Location</label>
+            <div id="search-container">
+                <input type="text" id="search-input" placeholder="e.g. Japan, Chile" list="locations-list">
+                <datalist id="locations-list"></datalist>
+                <button id="search-btn">Go</button>
+            </div>
+        </div>
 
         <h3>Presets</h3>
         <div class="preset-group">
@@ -300,7 +319,7 @@
         let stats = { maxMag: 0, maxDepth: 0, minTime: 0, maxTime: 0, avgMag: 0 };
 
         let staticBorderArrays = { x: [], y: [], z: [] };
-        let staticLabelArrays = { x: [], y: [], z: [], text: [] };
+        let staticLabelArrays = { x: [], y: [], z: [], text: [] }; 
         let staticPlateArrays = { x: [], y: [], z: [] };
         let staticGridArrays = { x: [], y: [], z: [] };
 
@@ -320,6 +339,86 @@
         }
         document.getElementById('menu-btn').addEventListener('click', toggleMenu);
         document.getElementById('close-btn').addEventListener('click', toggleMenu);
+
+        // --- Search Logic ---
+        function searchLocation() {
+            // Close info popup if open
+            document.getElementById('quake-info').style.display = 'none';
+
+            const query = document.getElementById('search-input').value.trim().toLowerCase();
+            const btn = document.getElementById('search-btn');
+            
+            if (!query) return;
+
+            // Find best match in labels
+            const labels = staticLabelArrays.text;
+            // First try exact match
+            let index = labels.findIndex(name => name.toLowerCase() === query); 
+            
+            if (index === -1) {
+                // Try partial match
+                index = labels.findIndex(name => name.toLowerCase().includes(query));
+            }
+
+            if (index !== -1) {
+                const tx = staticLabelArrays.x[index];
+                const ty = staticLabelArrays.y[index];
+                const tz = staticLabelArrays.z[index];
+
+                // Calculate normalized vector for Eye Direction (Look from this direction)
+                const len = Math.sqrt(tx*tx + ty*ty + tz*tz);
+                const nx = tx / len;
+                const ny = ty / len;
+                const nz = tz / len;
+
+                // Calculate Center Point (The surface point to rotate around)
+                // Use the same scale logic as the click handler
+                const PLOT_SCALE = 3000 / EARTH_RADIUS; 
+                const cx = (tx / EARTH_RADIUS) * PLOT_SCALE;
+                const cy = (ty / EARTH_RADIUS) * PLOT_SCALE;
+                const cz = (tz / EARTH_RADIUS) * PLOT_SCALE;
+
+                // Maintain current zoom distance relative to the new center
+                const currentDist = Math.sqrt(currentCamera.eye.x**2 + currentCamera.eye.y**2 + currentCamera.eye.z**2);
+                
+                // Position eye along the normal vector relative to the surface point
+                const newEye = {
+                    x: nx * currentDist,
+                    y: ny * currentDist,
+                    z: nz * currentDist
+                };
+
+                const newCenter = { x: cx, y: cy, z: cz };
+
+                // Update camera
+                const newCameraSettings = {
+                    eye: newEye,
+                    center: newCenter,
+                    up: { x: 0, y: 0, z: 1 }
+                };
+
+                currentCamera = newCameraSettings;
+                Plotly.relayout('chart-container', { 'scene.camera': newCameraSettings });
+                
+                // Stop rotation so user stays on target
+                autoRotate = false;
+                
+                // Feedback
+                const originalText = btn.innerText;
+                btn.innerText = "Found!";
+                setTimeout(() => btn.innerText = originalText, 1000);
+            } else {
+                const originalText = btn.innerText;
+                btn.innerText = "No Match";
+                btn.style.borderColor = "red";
+                btn.style.color = "red";
+                setTimeout(() => {
+                    btn.innerText = originalText;
+                    btn.style.borderColor = "#555";
+                    btn.style.color = "cyan";
+                }, 1500);
+            }
+        }
 
         // --- Date Helpers ---
         function setDefaultDates() {
@@ -375,13 +474,13 @@
 
                 const name = feature.properties ? feature.properties.name : null;
                 const type = geometry.type;
-
+                
                 const candidates = [];
 
                 const processRing = (ring) => {
                     let rMinLat = 90, rMaxLat = -90, rMinLon = 180, rMaxLon = -180;
                     let count = 0;
-
+                    
                     ring.forEach(pt => {
                         const lon = pt[0];
                         const lat = pt[1];
@@ -401,7 +500,7 @@
 
                     const latSpan = rMaxLat - rMinLat;
                     const lonSpan = rMaxLon - rMinLon;
-                    const area = latSpan * lonSpan;
+                    const area = latSpan * lonSpan; 
 
                     return {
                         lat: (rMinLat + rMaxLat) / 2,
@@ -431,7 +530,7 @@
                 }
             });
 
-            return {
+            return { 
                 borders: { x: bx, y: by, z: bz },
                 labels: { x: lx, y: ly, z: lz, text: lt }
             };
@@ -497,7 +596,7 @@
                 document.getElementById('max-mag-slider').value = "10";
                 document.getElementById('min-depth-filter').value = "0";
                 document.getElementById('max-depth-filter').value = "800";
-
+                
                 // Initialize checkboxes
                 document.getElementById('borders-checkbox').checked = true;
                 document.getElementById('plates-checkbox').checked = true;
@@ -520,6 +619,15 @@
                 staticBorderArrays = processedBorders.borders;
                 staticLabelArrays = processedBorders.labels;
 
+                // Populate Autocomplete
+                const dataList = document.getElementById('locations-list');
+                const uniqueNames = [...new Set(staticLabelArrays.text)].sort();
+                uniqueNames.forEach(name => {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    dataList.appendChild(option);
+                });
+
                 staticPlateArrays = processPlates(platesJson);
                 staticGridArrays = generateWireframeGrid();
 
@@ -532,7 +640,7 @@
                         if(isFilter) updatePlot(); // We also need to re-calc points for filters
                     });
                 });
-
+                
                 // Listen for checkbox change
                 document.getElementById('labels-checkbox').addEventListener('change', () => updatePlot());
                 document.getElementById('borders-checkbox').addEventListener('change', () => updatePlot());
@@ -542,6 +650,12 @@
                 document.getElementById('color-mode').addEventListener('change', () => updatePlot());
 
                 document.getElementById('load-btn').addEventListener('click', () => fetchDataAndPlot(false));
+                
+                // Search Listeners
+                document.getElementById('search-btn').addEventListener('click', searchLocation);
+                document.getElementById('search-input').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') searchLocation();
+                });
 
                 await fetchDataAndPlot(true);
 
@@ -595,11 +709,11 @@
                     if(!data || !data.points || data.points.length === 0) return;
 
                     const pt = data.points[0];
-
+                    
                     // Retrieve full data object from customdata
                     // The customdata was populated in updatePlot
                     const q = pt.customdata;
-
+                    
                     if (q) {
                         // Populate popup
                         document.getElementById('qi-place').innerText = q.place;
@@ -607,7 +721,7 @@
                         document.getElementById('qi-depth').innerText = q.depth.toFixed(1);
                         const d = new Date(q.time);
                         document.getElementById('qi-time').innerText = d.toLocaleString();
-
+                        
                         const link = document.getElementById('qi-link');
                         if (q.url) {
                             link.href = q.url;
@@ -615,7 +729,7 @@
                         } else {
                             link.style.display = 'none';
                         }
-
+                        
                         // Show popup
                         document.getElementById('quake-info').style.display = 'block';
                     }
@@ -650,7 +764,7 @@
             const loading = document.getElementById('loading');
             loading.style.display = 'block';
             loading.innerText = "Querying USGS...";
-
+            
             try {
                 const start = document.getElementById('start-date').value;
                 const end = document.getElementById('end-date').value;
@@ -676,7 +790,7 @@
 
                 stats = { maxMag: 0, maxDepth: 0, minTime: Infinity, maxTime: -Infinity, avgMag: 0, minMag: Infinity, minDepth: Infinity };
                 let totalMag = 0, count = 0, totalRealMag = 0, totalDepth = 0;
-
+                
                 // Counters for log report
                 let magCounts = { "0-3": 0, "3-5": 0, "5-7": 0, "7+": 0 };
                 let depthCounts = { "Shallow (<70km)": 0, "Intermediate (70-300km)": 0, "Deep (>300km)": 0 };
@@ -698,13 +812,13 @@
                     totalRealMag += realMag;
                     totalDepth += depth;
                     count++;
-
+                    
                     // Stats logic
                     if (realMag < 3) magCounts["0-3"]++;
                     else if (realMag < 5) magCounts["3-5"]++;
                     else if (realMag < 7) magCounts["5-7"]++;
                     else magCounts["7+"]++;
-
+                    
                     if (depth < 70) depthCounts["Shallow (<70km)"]++;
                     else if (depth < 300) depthCounts["Intermediate (70-300km)"]++;
                     else depthCounts["Deep (>300km)"]++;
@@ -741,7 +855,7 @@
                 console.log("=============================================");
 
                 document.getElementById('info-overlay').innerText = `Data: ${count} earthquakes. Source: USGS.`;
-
+                
                 loading.style.display = 'none';
 
                 // Show all immediately
@@ -805,13 +919,13 @@
             const baseSize = parseFloat(document.getElementById('size-slider').value);
             const magBonusScale = parseFloat(document.getElementById('mag-slider').value);
             const depthScale = parseFloat(document.getElementById('depth-slider').value);
-
+            
             // Checkbox logic replacing slider logic
             const borderWidth = document.getElementById('borders-checkbox').checked ? 1 : 0;
             const plateWidth = document.getElementById('plates-checkbox').checked ? 2 : 0;
             const showLabels = document.getElementById('labels-checkbox').checked;
             const labelSize = showLabels ? 12 : 0;
-
+            
             const selectedPalette = document.getElementById('color-select').value;
             const colorMode = document.getElementById('color-mode').value;
 
