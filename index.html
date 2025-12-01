@@ -871,8 +871,32 @@
                     document.getElementById('rotate-btn').innerHTML = '▶';
                 };
 
-                graphDiv.addEventListener('mousedown', (e) => {
+                // Close menu on outside click
+                graphDiv.addEventListener('mousedown', () => {
                     stopRotation();
+                    const panel = document.getElementById('side-panel');
+                    if (panel.classList.contains('open')) {
+                        panel.classList.remove('open');
+                    }
+                });
+
+                // Global Key Listener for Escape
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        const panel = document.getElementById('side-panel');
+                        const popup = document.getElementById('quake-info');
+
+                        // Priority 1: Close Side Panel
+                        if (panel.classList.contains('open')) {
+                            panel.classList.remove('open');
+                            return; // Stop here, don't close popup yet
+                        }
+
+                        // Priority 2: Close Popup
+                        if (popup.style.display !== 'none') {
+                            popup.style.display = 'none';
+                        }
+                    }
                 });
 
                 // --- EVENT BASED CAMERA TRACKING (No polling) ---
