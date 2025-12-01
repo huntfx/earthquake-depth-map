@@ -122,11 +122,55 @@
             color: cyan; font-size: 24px; font-weight: bold;
             background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; z-index: 2000;
         }
+
+        /* POPUP STYLES */
+        #quake-info {
+            position: absolute; top: 15px; right: 15px;
+            width: 250px;
+            background: rgba(20, 20, 20, 0.95);
+            border: 1px solid cyan;
+            border-radius: 4px;
+            padding: 15px;
+            color: white;
+            display: none;
+            z-index: 1005;
+            box-shadow: 0 0 15px rgba(0,0,0,0.8);
+            font-family: sans-serif;
+            animation: fadeIn 0.2s ease-out;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+
+        #quake-info h3 {
+            margin: 0 0 10px 0; color: cyan; font-size: 15px; border-bottom: 1px solid #444; padding-bottom: 5px;
+            line-height: 1.3;
+        }
+        #quake-info p { margin: 6px 0; font-size: 13px; color: #ccc; }
+        #quake-info strong { color: white; }
+        #quake-info a {
+            display: block; margin-top: 12px; color: black; background: cyan;
+            text-align: center; padding: 8px; text-decoration: none;
+            border-radius: 3px; font-weight: bold; font-size: 12px; transition: background 0.2s;
+        }
+        #quake-info a:hover { background: #ccffff; }
+        #quake-info-close {
+            position: absolute; top: 5px; right: 10px; cursor: pointer; color: #666; font-size: 18px; font-weight: bold;
+        }
+        #quake-info-close:hover { color: white; }
     </style>
 </head>
 <body>
 
     <div id="loading">Initializing...</div>
+
+    <!-- POPUP -->
+    <div id="quake-info">
+        <div id="quake-info-close" onclick="document.getElementById('quake-info').style.display='none'">×</div>
+        <h3 id="qi-place">Location</h3>
+        <p><strong>Magnitude:</strong> <span id="qi-mag"></span></p>
+        <p><strong>Depth:</strong> <span id="qi-depth"></span> km</p>
+        <p><strong>Time:</strong> <span id="qi-time"></span></p>
+        <a href="#" target="_blank" id="qi-link">View on USGS ↗</a>
+    </div>
 
     <button id="menu-btn">☰ Settings</button>
 
@@ -256,7 +300,7 @@
         let stats = { maxMag: 0, maxDepth: 0, minTime: 0, maxTime: 0, avgMag: 0 };
 
         let staticBorderArrays = { x: [], y: [], z: [] };
-        let staticLabelArrays = { x: [], y: [], z: [], text: [] }; // New label state
+        let staticLabelArrays = { x: [], y: [], z: [], text: [] };
         let staticPlateArrays = { x: [], y: [], z: [] };
         let staticGridArrays = { x: [], y: [], z: [] };
 
@@ -332,11 +376,8 @@
                 const name = feature.properties ? feature.properties.name : null;
                 const type = geometry.type;
 
-                // We'll store potential label points for this country (one per disjoint landmass)
                 const candidates = [];
 
-                // Helper to process a ring (array of [lon, lat])
-                // Returns object with centroid and approx area, or null
                 const processRing = (ring) => {
                     let rMinLat = 90, rMaxLat = -90, rMinLon = 180, rMaxLon = -180;
                     let count = 0;
@@ -345,25 +386,21 @@
                         const lon = pt[0];
                         const lat = pt[1];
 
-                        // Visuals: Add to border arrays
                         const [x, y, z] = latLonToXYZ(lat, lon, EARTH_RADIUS);
                         bx.push(x); by.push(y); bz.push(z);
 
-                        // Calc bounds for this specific ring to find its center
                         if (lat < rMinLat) rMinLat = lat;
                         if (lat > rMaxLat) rMaxLat = lat;
                         if (lon < rMinLon) rMinLon = lon;
                         if (lon > rMaxLon) rMaxLon = lon;
                         count++;
                     });
-                    // Break line strip for rendering
                     bx.push(null); by.push(null); bz.push(null);
 
                     if (count === 0) return null;
 
                     const latSpan = rMaxLat - rMinLat;
                     const lonSpan = rMaxLon - rMinLon;
-                    // Approximate area heuristic (degrees squared)
                     const area = latSpan * lonSpan;
 
                     return {
@@ -374,12 +411,10 @@
                 };
 
                 if (type === 'Polygon') {
-                    // Polygon: coordinates = [ [outer...], [inner...] ]
                     const ring = geometry.coordinates[0];
                     const data = processRing(ring);
                     if (data) candidates.push(data);
                 } else if (type === 'MultiPolygon') {
-                    // MultiPolygon: coordinates = [ [ [outer..], [inner..] ], ... ]
                     geometry.coordinates.forEach(poly => {
                         const ring = poly[0];
                         const data = processRing(ring);
@@ -387,14 +422,9 @@
                     });
                 }
 
-                // Smart Labeling Logic:
-                // Only label the LARGEST landmass for each country.
                 if (name && candidates.length > 0) {
-                    // Sort by area size descending (Largest landmass first)
                     candidates.sort((a, b) => b.area - a.area);
-
                     const largest = candidates[0];
-
                     const [cx, cy, cz] = latLonToXYZ(largest.lat, largest.lon, EARTH_RADIUS * 1.01);
                     lx.push(cx); ly.push(cy); lz.push(cz);
                     lt.push(name);
@@ -498,7 +528,8 @@
                     document.getElementById(id).addEventListener('input', () => {
                         updateLabels();
                         const isFilter = id.includes('min') || id.includes('max') || id.includes('filter');
-                        if(!isFilter) updatePlot();
+                        if(!isFilter) updatePlot(); // Plotly react for visuals
+                        if(isFilter) updatePlot(); // We also need to re-calc points for filters
                     });
                 });
 
@@ -564,6 +595,31 @@
                     if(!data || !data.points || data.points.length === 0) return;
 
                     const pt = data.points[0];
+
+                    // Retrieve full data object from customdata
+                    // The customdata was populated in updatePlot
+                    const q = pt.customdata;
+
+                    if (q) {
+                        // Populate popup
+                        document.getElementById('qi-place').innerText = q.place;
+                        document.getElementById('qi-mag').innerText = q.realMag.toFixed(2);
+                        document.getElementById('qi-depth').innerText = q.depth.toFixed(1);
+                        const d = new Date(q.time);
+                        document.getElementById('qi-time').innerText = d.toLocaleString();
+
+                        const link = document.getElementById('qi-link');
+                        if (q.url) {
+                            link.href = q.url;
+                            link.style.display = 'block';
+                        } else {
+                            link.style.display = 'none';
+                        }
+
+                        // Show popup
+                        document.getElementById('quake-info').style.display = 'block';
+                    }
+
                     const PLOT_SCALE = 3000 / EARTH_RADIUS;
                     const cx = (pt.x / EARTH_RADIUS) * PLOT_SCALE;
                     const cy = (pt.y / EARTH_RADIUS) * PLOT_SCALE;
@@ -621,6 +677,10 @@
                 stats = { maxMag: 0, maxDepth: 0, minTime: Infinity, maxTime: -Infinity, avgMag: 0, minMag: Infinity, minDepth: Infinity };
                 let totalMag = 0, count = 0, totalRealMag = 0, totalDepth = 0;
 
+                // Counters for log report
+                let magCounts = { "0-3": 0, "3-5": 0, "5-7": 0, "7+": 0 };
+                let depthCounts = { "Shallow (<70km)": 0, "Intermediate (70-300km)": 0, "Deep (>300km)": 0 };
+
                 rawQuakeData = quakeJson.features.map(f => {
                     const realMag = f.properties.mag || 0;
                     const visualMag = Math.max(realMag, 0.1);
@@ -639,6 +699,16 @@
                     totalDepth += depth;
                     count++;
 
+                    // Stats logic
+                    if (realMag < 3) magCounts["0-3"]++;
+                    else if (realMag < 5) magCounts["3-5"]++;
+                    else if (realMag < 7) magCounts["5-7"]++;
+                    else magCounts["7+"]++;
+
+                    if (depth < 70) depthCounts["Shallow (<70km)"]++;
+                    else if (depth < 300) depthCounts["Intermediate (70-300km)"]++;
+                    else depthCounts["Deep (>300km)"]++;
+
                     return {
                         lat: f.geometry.coordinates[1],
                         lon: f.geometry.coordinates[0],
@@ -646,7 +716,8 @@
                         mag: visualMag,
                         realMag: realMag,
                         time: time,
-                        place: f.properties.place || "Unknown"
+                        place: f.properties.place || "Unknown",
+                        url: f.properties.url
                     };
                 });
 
@@ -659,14 +730,22 @@
                 const realAvgMag = count > 0 ? (totalRealMag / count) : 0;
                 const avgDepth = count > 0 ? (totalDepth / count) : 0;
 
-                console.log("--- DATA REPORT ---");
-                console.log(`Count: ${count}, Avg Mag: ${realAvgMag.toFixed(2)}, Max Mag: ${stats.maxMag.toFixed(2)}`);
-                console.log(`Depth: ${stats.minDepth}km - ${stats.maxDepth}km`);
+                console.log("================ DATA REPORT ================");
+                console.log(`Total Events: ${count}`);
+                console.log(`Date Range: ${new Date(stats.minTime).toLocaleDateString()} to ${new Date(stats.maxTime).toLocaleDateString()}`);
+                console.log(`Magnitude: Min ${stats.minMag.toFixed(2)} | Max ${stats.maxMag.toFixed(2)} | Avg ${realAvgMag.toFixed(2)}`);
+                console.log(`Depth: Min ${stats.minDepth.toFixed(1)}km | Max ${stats.maxDepth.toFixed(1)}km`);
+                console.log("---------------------------------------------");
+                console.table(magCounts);
+                console.table(depthCounts);
+                console.log("=============================================");
 
                 document.getElementById('info-overlay').innerText = `Data: ${count} earthquakes. Source: USGS.`;
 
-                updatePlot(isInitial);
                 loading.style.display = 'none';
+
+                // Show all immediately
+                updatePlot(isInitial);
 
             } catch (err) {
                 console.error(err);
@@ -737,6 +816,7 @@
             const colorMode = document.getElementById('color-mode').value;
 
             const qx = [], qy = [], qz = [], sizes = [], ghostSizes = [], colors = [], texts = [];
+            const customData = []; // To store full object references for click events
 
             const MIDPOINT = 1.618;
 
@@ -753,6 +833,9 @@
                 const s = baseSize * (sizeFactor / 2.5);
                 sizes.push(s);
                 ghostSizes.push(Math.max(s * 2, 10));
+
+                // Add full object to custom data
+                customData.push(q);
 
                 if (colorMode === 'depth') colors.push(q.depth);
                 else if (colorMode === 'mag') colors.push(q.mag);
@@ -828,6 +911,7 @@
                 type: 'scatter3d', mode: 'markers',
                 x: qx, y: qy, z: qz,
                 hoverinfo: 'skip',
+                customdata: customData, // Pass full object to click event
                 marker: {
                     size: sizes, color: colors,
                     colorscale: colorSettings.colorscale, cmin: colorSettings.cmin, cmax: colorSettings.cmax,
@@ -839,6 +923,7 @@
                 type: 'scatter3d', mode: 'markers',
                 x: qx, y: qy, z: qz,
                 text: texts, hoverinfo: 'text',
+                customdata: customData, // FIX: Pass full object to ghost trace too!
                 marker: { size: ghostSizes, color: 'rgba(0,0,0,0)', opacity: 0.0 }
             };
 
