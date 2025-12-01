@@ -1084,10 +1084,22 @@
                 const sin = Math.sin(ROTATION_SPEED);
 
                 const currentEye = currentCamera.eye;
+                const currentCenter = currentCamera.center || {x: 0, y: 0, z: 0};
 
-                const newX = currentEye.x * cos - currentEye.y * sin;
-                const newY = currentEye.x * sin + currentEye.y * cos;
-                const newEye = { x: newX, y: newY, z: currentEye.z };
+                // Calculate vector relative to the center of rotation (the focus point)
+                const dx = currentEye.x - currentCenter.x;
+                const dy = currentEye.y - currentCenter.y;
+
+                // Rotate the relative vector
+                const newDx = dx * cos - dy * sin;
+                const newDy = dx * sin + dy * cos;
+
+                // Apply back to absolute coordinates
+                const newEye = {
+                    x: currentCenter.x + newDx,
+                    y: currentCenter.y + newDy,
+                    z: currentEye.z
+                };
 
                 currentCamera.eye = newEye;
 
