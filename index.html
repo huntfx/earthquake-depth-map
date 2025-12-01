@@ -126,13 +126,16 @@
         }
 
         /* Search Box Specifics */
-        #search-container { display: flex; gap: 5px; }
-        #search-btn {
+        .search-container { display: flex; gap: 5px; }
+        .search-btn {
             background: #444; color: cyan; border: 1px solid #555; cursor: pointer;
             padding: 5px 10px; border-radius: 3px; font-weight: bold; text-transform: uppercase;
             font-size: 11px; transition: all 0.2s;
         }
-        #search-btn:hover { background: #555; border-color: cyan; }
+        .search-btn:hover { background: #555; border-color: cyan; }
+        .search-btn:disabled {
+            opacity: 0.5; cursor: not-allowed; background: #333; color: #888; border-color: #555;
+        }
 
         .checkbox-group {
             display: flex;
@@ -291,13 +294,16 @@
         body.light-mode #load-btn:hover {
             background: #006666;
         }
-        body.light-mode #search-btn {
+        body.light-mode .search-btn {
             background: #e0e0e0;
             color: #008080;
             border-color: #ccc;
         }
-        body.light-mode #search-btn:hover {
+        body.light-mode .search-btn:hover {
             background: #d0d0d0;
+        }
+        body.light-mode .search-btn:disabled {
+            background: #eee; color: #aaa; border-color: #ddd; cursor: not-allowed;
         }
         body.light-mode #info-overlay {
             background: rgba(255, 255, 255, 0.8);
@@ -361,10 +367,20 @@
         <!-- Search Feature -->
         <div class="control-group">
             <label>Search Location</label>
-            <div id="search-container">
+            <div class="search-container">
                 <input type="text" id="search-input" placeholder="e.g. Japan, Chile" list="locations-list">
                 <datalist id="locations-list"></datalist>
-                <button id="search-btn">Go</button>
+                <button id="search-btn" class="search-btn" disabled>Go</button>
+            </div>
+        </div>
+
+        <!-- Seismic Zones -->
+        <div class="control-group">
+            <label>Seismic Zones</label>
+            <div class="search-container">
+                <input type="text" id="zone-input" placeholder="Select Zone..." list="zones-list">
+                <datalist id="zones-list"></datalist>
+                <button id="zone-btn" class="search-btn" disabled>Go</button>
             </div>
         </div>
 
@@ -494,6 +510,17 @@
         let staticPlateArrays = { x: [], y: [], z: [] };
         let staticGridArrays = { x: [], y: [], z: [] };
 
+        // Seismic Bookmarks Config - Display Names
+        const seismicBookmarks = {
+            "Ring of Fire (Pacific)": { lat: 0, lon: 180, zoom: 2.2 },
+            "Japan Trench": { lat: 36, lon: 138, zoom: 1.2 },
+            "Indonesia / Philippines": { lat: 5, lon: 120, zoom: 1.3 },
+            "San Andreas Fault": { lat: 35, lon: -120, zoom: 1.2 },
+            "Andes (South America)": { lat: -20, lon: -70, zoom: 1.2 },
+            "Himalayas (Collision Zone)": { lat: 30, lon: 85, zoom: 1.2 },
+            "Mid-Atlantic Ridge": { lat: 0, lon: -30, zoom: 1.8 }
+        };
+
         // Single Source of Truth for Camera
         let currentCamera = {
             eye: {x: 1.5, y: 1.5, z: 1.5},
@@ -517,8 +544,9 @@
             // Close info popup if open
             document.getElementById('quake-info').style.display = 'none';
 
-            const query = document.getElementById('search-input').value.trim().toLowerCase();
+            const input = document.getElementById('search-input');
             const btn = document.getElementById('search-btn');
+            const query = input.value.trim().toLowerCase();
 
             if (!query) return;
 
@@ -544,7 +572,6 @@
                 const nz = tz / len;
 
                 // Calculate Center Point (The surface point to rotate around)
-                // Use the same scale logic as the click handler
                 const PLOT_SCALE = 3000 / EARTH_RADIUS;
                 const cx = (tx / EARTH_RADIUS) * PLOT_SCALE;
                 const cy = (ty / EARTH_RADIUS) * PLOT_SCALE;
@@ -576,10 +603,85 @@
                 autoRotate = false;
                 document.getElementById('rotate-btn').innerHTML = '▶';
 
-                // Feedback
+                // Clear input and disable button (No visual text feedback)
+                input.value = "";
+                btn.disabled = true;
+            } else {
+                // Only show error feedback if not found
                 const originalText = btn.innerText;
-                btn.innerText = "Found!";
-                setTimeout(() => btn.innerText = originalText, 1000);
+                btn.innerText = "No Match";
+                btn.style.borderColor = "red";
+                btn.style.color = "red";
+                setTimeout(() => {
+                    btn.innerText = originalText;
+                    btn.style.borderColor = "#555";
+                    btn.style.color = "cyan";
+                }, 1500);
+            }
+        }
+
+        function searchZone() {
+            const input = document.getElementById('zone-input');
+            const btn = document.getElementById('zone-btn');
+            const query = input.value.trim();
+
+            // Close info popup if open
+            document.getElementById('quake-info').style.display = 'none';
+
+            if (!query) return;
+
+            // Case-insensitive lookup for keys
+            let matchedKey = Object.keys(seismicBookmarks).find(k => k.toLowerCase() === query.toLowerCase());
+
+            // Try partial match if exact fails
+            if (!matchedKey) {
+                matchedKey = Object.keys(seismicBookmarks).find(k => k.toLowerCase().includes(query.toLowerCase()));
+            }
+
+            if (matchedKey) {
+                const zone = seismicBookmarks[matchedKey];
+                // Calculate normalized vector from Lat/Lon
+                const latRad = zone.lat * Math.PI / 180;
+                const lonRad = zone.lon * Math.PI / 180;
+
+                // Vector for eye direction
+                const nx = Math.cos(latRad) * Math.cos(lonRad);
+                const ny = Math.cos(latRad) * Math.sin(lonRad);
+                const nz = Math.sin(latRad);
+
+                // New Center (Surface point)
+                const PLOT_SCALE = 3000 / EARTH_RADIUS;
+                const [tx, ty, tz] = latLonToXYZ(zone.lat, zone.lon, EARTH_RADIUS);
+                const scx = (tx / EARTH_RADIUS) * PLOT_SCALE;
+                const scy = (ty / EARTH_RADIUS) * PLOT_SCALE;
+                const scz = (tz / EARTH_RADIUS) * PLOT_SCALE;
+
+                const newCenter = { x: scx, y: scy, z: scz };
+
+                // New Eye (Zoom distance back from center)
+                const zoomDist = zone.zoom;
+                const newEye = {
+                    x: nx * zoomDist,
+                    y: ny * zoomDist,
+                    z: nz * zoomDist
+                };
+
+                const newCam = {
+                    eye: newEye,
+                    center: newCenter,
+                    up: { x: 0, y: 0, z: 1 }
+                };
+
+                currentCamera = newCam;
+                Plotly.relayout('chart-container', { 'scene.camera': newCam });
+
+                // Stop rotation
+                autoRotate = false;
+                document.getElementById('rotate-btn').innerHTML = '▶';
+
+                // Clear input and disable button (No visual text feedback)
+                input.value = "";
+                btn.disabled = true;
             } else {
                 const originalText = btn.innerText;
                 btn.innerText = "No Match";
@@ -792,13 +894,21 @@
                 staticBorderArrays = processedBorders.borders;
                 staticLabelArrays = processedBorders.labels;
 
-                // Populate Autocomplete
+                // Populate Autocomplete (Countries)
                 const dataList = document.getElementById('locations-list');
                 const uniqueNames = [...new Set(staticLabelArrays.text)].sort();
                 uniqueNames.forEach(name => {
                     const option = document.createElement('option');
                     option.value = name;
                     dataList.appendChild(option);
+                });
+
+                // Populate Autocomplete (Zones)
+                const zonesList = document.getElementById('zones-list');
+                Object.keys(seismicBookmarks).forEach(name => {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    zonesList.appendChild(option);
                 });
 
                 staticPlateArrays = processPlates(platesJson);
@@ -856,10 +966,32 @@
 
                 document.getElementById('load-btn').addEventListener('click', () => fetchDataAndPlot(false));
 
-                // Search Listeners
+                // Search Listeners (Countries)
                 document.getElementById('search-btn').addEventListener('click', searchLocation);
                 document.getElementById('search-input').addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') searchLocation();
+                });
+                // Validation on Input (Case Insensitive Match)
+                document.getElementById('search-input').addEventListener('input', (e) => {
+                    const val = e.target.value.trim().toLowerCase();
+                    const btn = document.getElementById('search-btn');
+                    // Check against country list (case insensitive)
+                    const isValid = staticLabelArrays.text.some(name => name.toLowerCase() === val);
+                    btn.disabled = !isValid;
+                });
+
+                // Search Listeners (Zones)
+                document.getElementById('zone-btn').addEventListener('click', searchZone);
+                document.getElementById('zone-input').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') searchZone();
+                });
+                // Validation on Input (Case Insensitive Match)
+                document.getElementById('zone-input').addEventListener('input', (e) => {
+                    const val = e.target.value.trim().toLowerCase();
+                    const btn = document.getElementById('zone-btn');
+                    // Check against zone keys (case insensitive)
+                    const isValid = Object.keys(seismicBookmarks).some(k => k.toLowerCase() === val);
+                    btn.disabled = !isValid;
                 });
 
                 await fetchDataAndPlot(true);
