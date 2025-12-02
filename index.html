@@ -79,6 +79,25 @@
         }
         #reset-btn:hover { background: rgba(0, 255, 255, 0.2); }
 
+        /* GPS BUTTON */
+        #gps-btn {
+            position: absolute; top: 15px; right: 165px;
+            background: rgba(0, 0, 0, 0.6);
+            color: cyan;
+            border: 1px solid cyan;
+            border-radius: 4px;
+            font-size: 20px;
+            padding: 5px 12px;
+            cursor: pointer;
+            z-index: 1001;
+            transition: all 0.2s;
+            width: 40px;
+            text-align: center;
+            height: 41px;
+            box-sizing: border-box;
+        }
+        #gps-btn:hover { background: rgba(0, 255, 255, 0.2); }
+
         #side-panel {
             position: fixed;
             top: 0; left: -340px;
@@ -240,7 +259,7 @@
             color: #008080; /* Teal */
             border-color: #008080;
         }
-        body.light-mode #theme-btn, body.light-mode #rotate-btn, body.light-mode #reset-btn {
+        body.light-mode #theme-btn, body.light-mode #rotate-btn, body.light-mode #reset-btn, body.light-mode #gps-btn {
             background: rgba(255, 255, 255, 0.8);
             color: #333;
             border-color: #333;
@@ -344,6 +363,7 @@
     <div id="loading">Initializing...</div>
 
     <!-- BUTTONS -->
+    <button id="gps-btn">⌖</button>
     <button id="reset-btn">⟳</button>
     <button id="rotate-btn">❚❚</button>
     <button id="theme-btn">☀</button>
@@ -938,6 +958,71 @@
                     // Auto-play on reset
                     autoRotate = true;
                     document.getElementById('rotate-btn').innerHTML = '❚❚';
+                });
+
+                // GPS Button
+                document.getElementById('gps-btn').addEventListener('click', () => {
+                    if (!navigator.geolocation) {
+                        alert("Geolocation is not supported by your browser.");
+                        return;
+                    }
+
+                    const btn = document.getElementById('gps-btn');
+                    const originalText = btn.innerHTML;
+                    btn.innerHTML = "⌛";
+
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            const lat = position.coords.latitude;
+                            const lon = position.coords.longitude;
+
+                            // Move Camera logic (copied/adapted from search)
+                            const [tx, ty, tz] = latLonToXYZ(lat, lon, EARTH_RADIUS);
+
+                            // Calculate normalized vector
+                            const len = Math.sqrt(tx*tx + ty*ty + tz*tz);
+                            const nx = tx / len;
+                            const ny = ty / len;
+                            const nz = tz / len;
+
+                            const PLOT_SCALE = 3000 / EARTH_RADIUS;
+                            const cx = (tx / EARTH_RADIUS) * PLOT_SCALE;
+                            const cy = (ty / EARTH_RADIUS) * PLOT_SCALE;
+                            const cz = (tz / EARTH_RADIUS) * PLOT_SCALE;
+
+                            const currentDist = Math.sqrt(currentCamera.eye.x**2 + currentCamera.eye.y**2 + currentCamera.eye.z**2);
+
+                            const newEye = {
+                                x: nx * currentDist,
+                                y: ny * currentDist,
+                                z: nz * currentDist
+                            };
+
+                            const newCenter = { x: cx, y: cy, z: cz };
+
+                            const newCameraSettings = {
+                                eye: newEye,
+                                center: newCenter,
+                                up: { x: 0, y: 0, z: 1 }
+                            };
+
+                            currentCamera = newCameraSettings;
+                            Plotly.relayout('chart-container', { 'scene.camera': newCameraSettings });
+
+                            // Stop rotation
+                            autoRotate = false;
+                            document.getElementById('rotate-btn').innerHTML = '▶';
+
+                            // Success feedback
+                            btn.innerHTML = "✓";
+                            setTimeout(() => btn.innerHTML = originalText, 1500);
+                        },
+                        (error) => {
+                            console.error("Error getting location:", error);
+                            btn.innerHTML = "⚠";
+                            setTimeout(() => btn.innerHTML = originalText, 1500);
+                        }
+                    );
                 });
 
                 document.getElementById('color-select').addEventListener('change', () => updatePlot());
