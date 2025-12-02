@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">a
     <title>Earthquake Depth Map</title>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 
@@ -86,8 +86,7 @@
             color: cyan;
             border: 1px solid cyan;
             border-radius: 4px;
-            font-size: 20px;
-            padding: 5px 12px;
+            padding: 8px 0;
             cursor: pointer;
             z-index: 1001;
             transition: all 0.2s;
@@ -95,6 +94,20 @@
             text-align: center;
             height: 41px;
             box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #gps-btn svg {
+            width: 20px;
+            height: 20px;
+            stroke: cyan;
+            fill: none;
+            stroke-width: 2;
+        }
+        #gps-btn circle.inner {
+            fill: cyan;
+            stroke: none;
         }
         #gps-btn:hover { background: rgba(0, 255, 255, 0.2); }
 
@@ -202,6 +215,7 @@
             background: rgba(0,0,0,0.5);
             padding: 5px 10px;
             border-radius: 4px;
+            transition: color 0.3s;
         }
 
         #loading {
@@ -264,6 +278,13 @@
             color: #333;
             border-color: #333;
         }
+        body.light-mode #gps-btn svg {
+            stroke: #333;
+        }
+        body.light-mode #gps-btn circle.inner {
+            fill: #333;
+        }
+
         body.light-mode h2 {
             color: #008080;
             border-bottom-color: #ccc;
@@ -363,7 +384,12 @@
     <div id="loading">Initializing...</div>
 
     <!-- BUTTONS -->
-    <button id="gps-btn">⌖</button>
+    <button id="gps-btn">
+        <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10"></circle>
+            <circle cx="12" cy="12" r="4" class="inner"></circle>
+        </svg>
+    </button>
     <button id="reset-btn">⟳</button>
     <button id="rotate-btn">❚❚</button>
     <button id="theme-btn">☀</button>
@@ -963,14 +989,11 @@
                 // GPS Button
                 document.getElementById('gps-btn').addEventListener('click', () => {
                     if (!navigator.geolocation) {
-                        alert("Geolocation is not supported by your browser.");
+                        showError("Geolocation is not supported.");
                         return;
                     }
 
-                    const btn = document.getElementById('gps-btn');
-                    const originalText = btn.innerHTML;
-                    btn.innerHTML = "⌛";
-
+                    // No icon change, just request logic
                     navigator.geolocation.getCurrentPosition(
                         (position) => {
                             const lat = position.coords.latitude;
@@ -1012,18 +1035,32 @@
                             // Stop rotation
                             autoRotate = false;
                             document.getElementById('rotate-btn').innerHTML = '▶';
-
-                            // Success feedback
-                            btn.innerHTML = "✓";
-                            setTimeout(() => btn.innerHTML = originalText, 1500);
                         },
                         (error) => {
-                            console.error("Error getting location:", error);
-                            btn.innerHTML = "⚠";
-                            setTimeout(() => btn.innerHTML = originalText, 1500);
-                        }
+                            let msg = "Location access denied or unavailable.";
+                            if (error.code === 1) msg = "Location permission denied.";
+                            else if (error.code === 2) msg = "Location unavailable.";
+                            else if (error.code === 3) msg = "Location request timed out.";
+                            else if (error.message) msg = error.message;
+
+                            showError(msg);
+                        },
+                        { timeout: 10000, maximumAge: 0, enableHighAccuracy: false }
                     );
                 });
+
+                function showError(msg) {
+                    const loadingDiv = document.getElementById('loading');
+                    loadingDiv.innerText = "Error: " + msg; // Added prefix
+                    loadingDiv.style.color = '#ff4444';
+                    loadingDiv.style.display = 'block';
+
+                    setTimeout(() => {
+                        loadingDiv.style.display = 'none';
+                        loadingDiv.style.color = 'cyan';
+                        loadingDiv.innerText = "Initializing...";
+                    }, 3000);
+                }
 
                 document.getElementById('color-select').addEventListener('change', () => updatePlot());
                 document.getElementById('color-mode').addEventListener('change', () => updatePlot());
