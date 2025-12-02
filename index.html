@@ -563,8 +563,8 @@
             </div>
         </div>
         <div class="control-group">
-            <label>Frames (Rotation): <span id="frame-count-val" class="val">360</span></label>
-            <input type="range" id="frame-slider" min="1" max="32" step="0.001" value="18.9737">
+            <label>Frames: <span id="frame-count-val" class="val">256</span></label>
+            <input type="range" id="frame-slider" min="1" max="32" step="0.001" value="16">
         </div>
         <div class="control-group">
             <label>Resolution Scale: <span id="render-scale-val" class="val">1x</span></label>
@@ -614,15 +614,34 @@
         };
 
         let autoRotate = true;
-        let frameCounter = 0;
         let isLightMode = false;
 
         // --- Helper Function for Frame Calc ---
         function getFrameCount() {
             const val = parseFloat(document.getElementById('frame-slider').value);
             // Square law: x^2 mapping
-            // Range 1..32 maps to 1..1024
+            // Range 1..32 maps to 1..1024. Default 16 maps to 256.
             return Math.round(val * val);
+        }
+
+        // --- Helper to calculate size array for renderer ---
+        function calculateScaledSizes(multiplier) {
+            const baseSize = parseFloat(document.getElementById('size-slider').value);
+            const magBonusScale = parseFloat(document.getElementById('mag-slider').value);
+            const sizes = [];
+            const MIDPOINT = 1.618;
+
+            for (const q of rawQuakeData) {
+                let sizeFactor = q.mag;
+                if (q.mag > MIDPOINT) {
+                    const diff = q.mag - MIDPOINT;
+                    sizeFactor += (Math.pow(diff, 3) * magBonusScale);
+                }
+                // Apply multiplier to final size
+                const s = baseSize * (sizeFactor / 2.5) * multiplier;
+                sizes.push(s);
+            }
+            return sizes;
         }
 
         // --- Global Error Helper ---
@@ -977,11 +996,30 @@
             document.getElementById('rotate-btn').innerHTML = '▶';
 
             // Get inputs
-            const multiplier = parseFloat(document.getElementById('render-scale').value) || 1;
+            const sliderMultiplier = parseFloat(document.getElementById('render-scale').value) || 1;
             const graphDiv = document.getElementById('chart-container');
+            const originalW = graphDiv.clientWidth;
+            const originalH = graphDiv.clientHeight;
 
-            const renderW = graphDiv.clientWidth * multiplier;
-            const renderH = graphDiv.clientHeight * multiplier;
+            // Calculate Target Resolution
+            let renderW = originalW * sliderMultiplier;
+            let renderH = originalH * sliderMultiplier;
+
+            // Clamp to MAX_DIM (8192px)
+            const MAX_DIM = 8192;
+            if (renderW > MAX_DIM || renderH > MAX_DIM) {
+                 const ratio = renderW / renderH;
+                 if (renderW > renderH) {
+                     renderW = MAX_DIM;
+                     renderH = MAX_DIM / ratio;
+                 } else {
+                     renderH = MAX_DIM;
+                     renderW = MAX_DIM * ratio;
+                 }
+            }
+
+            // Calculate the ACTUAL multiplier applied (Effective Scale)
+            const effectiveMultiplier = renderW / originalW;
 
             // Logarithmic Frame count (Square Law Fix)
             const numFrames = getFrameCount();
@@ -989,42 +1027,41 @@
             loading.style.display = 'block';
             loading.style.color = 'cyan';
 
-            // HIDE COLORBAR (Simple approach: switch color mode to date momentarily or set showscale false)
-            // We need to update trace properties.
-            // Store original props
-            const originalMarkerSize = parseFloat(document.getElementById('size-slider').value);
+            // Store original props for cleanup
             const originalBorderWidth = isLightMode ? 4 : 1;
             const originalPlateWidth = isLightMode ? 4 : 2;
+            const originalLabelSize = document.getElementById('labels-checkbox').checked ? 12 : 0;
 
-            // Apply Scaling & Hide Colorbar
-            // For trace updates we use restyle. For layout relayout.
-            // Hide colorbar: trace index 4 is the main quake trace.
-            const scaledMarkerSize = originalMarkerSize * multiplier;
-            const scaledBorderWidth = originalBorderWidth * multiplier;
-            const scaledPlateWidth = originalPlateWidth * multiplier;
+            // --- SETUP PHASE: Scale & Hide UI ---
+            // Based on empirical testing, scaling clamps around 1.6x even at higher resolutions
+            const visualMultiplier = Math.min(effectiveMultiplier, 1.6);
 
-            // Update styling for render
+            const scaledMarkerSizes = calculateScaledSizes(visualMultiplier);
+            const scaledBorderWidth = originalBorderWidth * visualMultiplier;
+            const scaledPlateWidth = originalPlateWidth * visualMultiplier;
+            const scaledLabelSize = originalLabelSize * visualMultiplier;
+
+            // Apply Styling Override
+            // Trace 4 = Quakes, Trace 1 = Borders, Trace 2 = Plates, Trace 3 = Labels
             await Plotly.restyle(graphDiv, {
                 'marker.showscale': false, // Hide colorbar
-                'marker.size': scaledMarkerSize
-            }, [4]); // Quake trace
+                'marker.size': [scaledMarkerSizes] // Array of scaled sizes
+            }, [4]);
 
-            await Plotly.restyle(graphDiv, {
-                'line.width': scaledBorderWidth
-            }, [1]); // Border trace
-
-             await Plotly.restyle(graphDiv, {
-                'line.width': scaledPlateWidth
-            }, [2]); // Plate trace
+            await Plotly.restyle(graphDiv, { 'line.width': scaledBorderWidth }, [1]);
+            await Plotly.restyle(graphDiv, { 'line.width': scaledPlateWidth }, [2]);
+            await Plotly.restyle(graphDiv, { 'textfont.size': scaledLabelSize }, [3]);
 
 
             // Rendering Loop
             const currentCenter = currentCamera.center || {x: 0, y: 0, z: 0};
-
             const startEye = { ...currentCamera.eye };
+            const startUp = { ...currentCamera.up };
+
+            // Calculate Vector relative to center
             const dx = startEye.x - currentCenter.x;
             const dy = startEye.y - currentCenter.y;
-            const startZ = startEye.z;
+            const dz = startEye.z - currentCenter.z;
 
             // Helper to wait for redraw
             const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -1059,15 +1096,19 @@
                     loading.innerText = `Rendering frame ${i + 1}/${numFrames}...`;
 
                     const angle = (i / numFrames) * 2 * Math.PI;
+                    const cos = Math.cos(angle);
+                    const sin = Math.sin(angle);
 
-                    // Rotate
-                    const newDx = dx * Math.cos(angle) - dy * Math.sin(angle);
-                    const newDy = dx * Math.sin(angle) + dy * Math.cos(angle);
+                    // Rotate the vector (Standard Z-axis rotation)
+                    // x' = x*cos - y*sin
+                    // y' = x*sin + y*cos
+                    const newDx = dx * cos - dy * sin;
+                    const newDy = dx * sin + dy * cos;
 
                     const newEye = {
                         x: currentCenter.x + newDx,
                         y: currentCenter.y + newDy,
-                        z: startZ
+                        z: currentCenter.z + dz
                     };
 
                     // Update Camera
@@ -1095,16 +1136,24 @@
 
                 loading.innerText = "Done!";
 
-                // RESTORE Styling
+                // --- CLEANUP PHASE ---
+                // Restore Camera to start
+                await Plotly.relayout(graphDiv, {
+                    'scene.camera': { eye: startEye, center: currentCenter, up: startUp }
+                });
+
+                // Calculate standard sizes (multiplier 1)
+                const normalSizes = calculateScaledSizes(1.0);
+
+                // Restore Styling
                  await Plotly.restyle(graphDiv, {
                     'marker.showscale': true,
-                    'marker.size': originalMarkerSize // This might need calculating per-point again if simple update fails, but for constant size its fine.
-                    // Wait, marker size is an array in updatePlot. Restyling with a single number makes all same size.
-                    // We need to trigger full updatePlot to restore correct sizing logic.
+                    'marker.size': [normalSizes]
                 }, [4]);
 
-                // Trigger full update to restore complex size logic and line widths
-                updatePlot();
+                 await Plotly.restyle(graphDiv, { 'line.width': originalBorderWidth }, [1]);
+                 await Plotly.restyle(graphDiv, { 'line.width': originalPlateWidth }, [2]);
+                 await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [3]);
 
                 setTimeout(() => { loading.style.display = 'none'; loading.innerText = "Initializing..."; }, 2000);
 
@@ -1117,8 +1166,13 @@
                     loading.style.color = 'cyan';
                     loading.innerText = "Initializing...";
                 }, 4000);
+
                  // Try to restore on error too
-                 updatePlot();
+                 const normalSizes = calculateScaledSizes(1.0);
+                 await Plotly.restyle(graphDiv, { 'marker.showscale': true, 'marker.size': [normalSizes] }, [4]);
+                 await Plotly.restyle(graphDiv, { 'line.width': originalBorderWidth }, [1]);
+                 await Plotly.restyle(graphDiv, { 'line.width': originalPlateWidth }, [2]);
+                 await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [3]);
             }
         }
 
@@ -1300,8 +1354,6 @@
         }
 
         function updatePlot(isInitial = false) {
-            const baseSize = parseFloat(document.getElementById('size-slider').value);
-            const magBonusScale = parseFloat(document.getElementById('mag-slider').value);
             const depthScale = parseFloat(document.getElementById('depth-slider').value);
 
             // Checkbox logic replacing slider logic
@@ -1328,23 +1380,19 @@
             const selectedPalette = document.getElementById('color-select').value;
             const colorMode = document.getElementById('color-mode').value;
 
-            const qx = [], qy = [], qz = [], sizes = [], ghostSizes = [], colors = [], texts = [];
+            const qx = [], qy = [], qz = [], ghostSizes = [], colors = [], texts = [];
             const customData = []; // To store full object references for click events
 
-            const MIDPOINT = 1.618;
+            // Use shared helper for consistency, multiplier 1 for standard view
+            const sizes = calculateScaledSizes(1.0);
 
+            let i = 0;
             for (const q of rawQuakeData) {
                 const r_quake = EARTH_RADIUS - (q.depth * depthScale);
                 const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
                 qx.push(x); qy.push(y); qz.push(z);
 
-                let sizeFactor = q.mag;
-                if (q.mag > MIDPOINT) {
-                    const diff = q.mag - MIDPOINT;
-                    sizeFactor += (Math.pow(diff, 3) * magBonusScale);
-                }
-                const s = baseSize * (sizeFactor / 2.5);
-                sizes.push(s);
+                const s = sizes[i]; // Use pre-calculated size
                 ghostSizes.push(Math.max(s * 2, 10));
 
                 // Add full object to custom data
@@ -1362,6 +1410,7 @@
                     `Magnitude: ${q.realMag.toFixed(2)}<br>` +
                     `Depth: ${q.depth.toFixed(2)}km`
                 );
+                i++;
             }
 
             let colorSettings = {
@@ -1717,8 +1766,8 @@
                     isDragging: false,
                     startX: 0,
                     startY: 0,
-                    pointData: null,      // Stores data from plotly_click
-                    awaitingData: false   // True if mouseup happened but plotly_click hasn't fired yet
+                    pointData: null,       // Stores data from plotly_click
+                    awaitingData: false    // True if mouseup happened but plotly_click hasn't fired yet
                 };
 
                 // 1. Pointer Down: Reset everything
@@ -1800,15 +1849,10 @@
 
                     // Fly Camera
                     const PLOT_SCALE = 3000 / EARTH_RADIUS;
-                    const cx = (q.lon * Math.PI/180); // Re-calc radians for raw logic if needed, but we used XYZ
-                    // Wait, we need the original XYZ from the point data or recompute
-                    // customdata (q) has lat/lon/depth. Recompute XYZ:
                     const r_quake = EARTH_RADIUS - (q.depth * parseFloat(document.getElementById('depth-slider').value));
                     const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
 
                     // Apply Plot Scale
-                    const pcx = x * (PLOT_SCALE/EARTH_RADIUS) * EARTH_RADIUS; // Wait, latLonToXYZ returns Real World KM
-                    // Our Plotly scale is normalized so EARTH_RADIUS = 3000 roughly
                     const scx = (x / EARTH_RADIUS) * PLOT_SCALE;
                     const scy = (y / EARTH_RADIUS) * PLOT_SCALE;
                     const scz = (z / EARTH_RADIUS) * PLOT_SCALE;
