@@ -275,23 +275,29 @@
 
         /* --- LIGHT MODE OVERRIDES --- */
         body.light-mode {
-            background-color: white;
-            color: #333;
+            background-color: #f0f0f0; /* Off-white background */
+            color: #333; /* Dark grey text */
         }
         body.light-mode #side-panel {
-            background: rgba(245, 245, 245, 0.95);
+            background: rgba(255, 255, 255, 0.95); /* Translucent white panel */
             border-right: 1px solid #ccc;
-            box-shadow: 2px 0 15px rgba(0,0,0,0.2);
+            box-shadow: 2px 0 15px rgba(0,0,0,0.1);
         }
         body.light-mode #menu-btn {
-            background: rgba(255, 255, 255, 0.8);
-            color: #008080; /* Teal */
+            background: rgba(255, 255, 255, 0.9);
+            color: #008080; /* Teal accent */
             border-color: #008080;
         }
+        body.light-mode #menu-btn:hover {
+            background: rgba(0, 128, 128, 0.1);
+        }
         body.light-mode #theme-btn, body.light-mode #rotate-btn, body.light-mode #reset-btn, body.light-mode #gps-btn {
-            background: rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.9);
             color: #333;
             border-color: #333;
+        }
+        body.light-mode #theme-btn:hover, body.light-mode #rotate-btn:hover, body.light-mode #reset-btn:hover, body.light-mode #gps-btn:hover {
+            background: rgba(0, 0, 0, 0.05);
         }
         body.light-mode #gps-btn svg {
             stroke: #333;
@@ -301,7 +307,7 @@
         }
 
         body.light-mode h2 {
-            color: #008080;
+            color: #008080; /* Teal accent */
             border-bottom-color: #ccc;
         }
         body.light-mode h3 {
@@ -335,34 +341,34 @@
             border-color: #bbb;
         }
         body.light-mode .preset-btn:hover {
-            background: #eee;
+            background: #e6f2f2;
             border-color: #008080;
             color: #008080;
         }
         body.light-mode input[type=range] {
             background: #ddd;
-            accent-color: #008080;
+            accent-color: #008080; /* Teal accent */
         }
         body.light-mode #load-btn, body.light-mode #render-btn {
-            background: #008080;
+            background: #008080; /* Teal accent */
             color: white;
         }
         body.light-mode #load-btn:hover, body.light-mode #render-btn:hover {
-            background: #006666;
+            background: #006666; /* Darker teal on hover */
         }
         body.light-mode .search-btn {
-            background: #e0e0e0;
+            background: #f0f0f0;
             color: #008080;
             border-color: #ccc;
         }
         body.light-mode .search-btn:hover {
-            background: #d0d0d0;
+            background: #e0e0e0;
         }
         body.light-mode .search-btn:disabled {
             background: #eee; color: #aaa; border-color: #ddd; cursor: not-allowed;
         }
         body.light-mode #info-overlay {
-            background: rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.85);
             color: #333;
             border: 1px solid #ddd;
         }
@@ -371,7 +377,7 @@
             background: rgba(255, 255, 255, 0.95);
             border-color: #008080;
             color: #333;
-            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            box-shadow: 0 0 15px rgba(0,0,0,0.1);
         }
         body.light-mode #quake-info h3 {
             color: #008080;
@@ -392,6 +398,13 @@
         }
         body.light-mode #close-btn:hover {
             color: #333;
+        }
+        /* Loading Overlay Light Mode */
+        body.light-mode #loading {
+            background: rgba(255, 255, 255, 0.95);
+            color: #008080;
+            border: 1px solid #008080;
+            box-shadow: 0 0 20px rgba(0,0,0,0.2);
         }
     </style>
 </head>
@@ -653,7 +666,7 @@
 
             setTimeout(() => {
                 loadingDiv.style.display = 'none';
-                loadingDiv.style.color = 'cyan';
+                loadingDiv.style.color = ''; // Reset to default (CSS handles it)
                 loadingDiv.innerText = "Initializing...";
             }, 3000);
         }
@@ -970,7 +983,7 @@
                 loading.style.color = 'red';
                 setTimeout(() => {
                     loading.style.display = 'none';
-                    loading.style.color = 'cyan';
+                    loading.style.color = ''; // Reset to default (CSS handles it)
                     loading.innerText = "Initializing...";
                 }, 4000);
                 return;
@@ -1025,10 +1038,10 @@
             const numFrames = getFrameCount();
 
             loading.style.display = 'block';
-            loading.style.color = 'cyan';
+            loading.style.color = ''; // Reset to default (CSS handles it)
 
             // Store original props for cleanup
-            const originalBorderWidth = isLightMode ? 4 : 1;
+            const originalBorderWidth = isLightMode ? 4 : 1; // Default width before scaling logic override below
             const originalPlateWidth = isLightMode ? 4 : 2;
             const originalLabelSize = document.getElementById('labels-checkbox').checked ? 12 : 0;
 
@@ -1037,8 +1050,8 @@
             const visualMultiplier = Math.min(effectiveMultiplier, 1.6);
 
             const scaledMarkerSizes = calculateScaledSizes(visualMultiplier);
-            const scaledBorderWidth = originalBorderWidth * visualMultiplier;
-            const scaledPlateWidth = originalPlateWidth * visualMultiplier;
+            const scaledBorderWidth = (isLightMode ? 2 : 1) * visualMultiplier; // Override with new light mode widths
+            const scaledPlateWidth = (isLightMode ? 3 : 2) * visualMultiplier;
             const scaledLabelSize = originalLabelSize * visualMultiplier;
 
             // Apply Styling Override
@@ -1151,8 +1164,8 @@
                     'marker.size': [normalSizes]
                 }, [4]);
 
-                 await Plotly.restyle(graphDiv, { 'line.width': originalBorderWidth }, [1]);
-                 await Plotly.restyle(graphDiv, { 'line.width': originalPlateWidth }, [2]);
+                 await Plotly.restyle(graphDiv, { 'line.width': isLightMode ? 2 : 1 }, [1]);
+                 await Plotly.restyle(graphDiv, { 'line.width': isLightMode ? 3 : 2 }, [2]);
                  await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [3]);
 
                 setTimeout(() => { loading.style.display = 'none'; loading.innerText = "Initializing..."; }, 2000);
@@ -1163,15 +1176,15 @@
                  loading.style.color = "red";
                  setTimeout(() => {
                     loading.style.display = 'none';
-                    loading.style.color = 'cyan';
+                    loading.style.color = ''; // Reset to default (CSS handles it)
                     loading.innerText = "Initializing...";
                 }, 4000);
 
                  // Try to restore on error too
                  const normalSizes = calculateScaledSizes(1.0);
                  await Plotly.restyle(graphDiv, { 'marker.showscale': true, 'marker.size': [normalSizes] }, [4]);
-                 await Plotly.restyle(graphDiv, { 'line.width': originalBorderWidth }, [1]);
-                 await Plotly.restyle(graphDiv, { 'line.width': originalPlateWidth }, [2]);
+                 await Plotly.restyle(graphDiv, { 'line.width': isLightMode ? 2 : 1 }, [1]);
+                 await Plotly.restyle(graphDiv, { 'line.width': isLightMode ? 3 : 2 }, [2]);
                  await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [3]);
             }
         }
@@ -1364,18 +1377,18 @@
 
             // Light Mode check
             // Use dark grey for borders in light mode for better contrast
-            const bgColor = isLightMode ? 'white' : 'black';
-            const gridColor = isLightMode ? '#e0e0e0' : '#333';
-            const borderColor = isLightMode ? '#444444' : '#00ffff';
+            const bgColor = isLightMode ? '#f0f0f0' : 'black';
+            const gridColor = isLightMode ? '#ccc' : '#333';
+            const borderColor = isLightMode ? '#666' : '#00ffff';
 
             // Lighter blue for plates in light mode to distinguish from grey borders
-            const plateColor = isLightMode ? '#4169E1' : '#1E90FF';
+            const plateColor = isLightMode ? '#2288cc' : '#1E90FF';
 
-            const labelColor = isLightMode ? 'rgba(0,0,0,0.7)' : 'rgba(180, 180, 180, 0.9)';
+            const labelColor = isLightMode ? 'rgba(0, 0, 0, 0.7)' : 'rgba(180, 180, 180, 0.9)';
 
             // Thicker borders in Light Mode for visibility
-            const borderWidth = bordersEnabled ? (isLightMode ? 4 : 1) : 0;
-            const plateWidth = platesEnabled ? (isLightMode ? 4 : 2) : 0;
+            const borderWidth = bordersEnabled ? (isLightMode ? 2 : 1) : 0;
+            const plateWidth = platesEnabled ? (isLightMode ? 3 : 2) : 0;
 
             const selectedPalette = document.getElementById('color-select').value;
             const colorMode = document.getElementById('color-mode').value;
@@ -1701,7 +1714,7 @@
 
                     setTimeout(() => {
                         loadingDiv.style.display = 'none';
-                        loadingDiv.style.color = 'cyan';
+                        loadingDiv.style.color = ''; // Reset to default (CSS handles it)
                         loadingDiv.innerText = "Initializing...";
                     }, 3000);
                 }
