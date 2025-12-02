@@ -166,7 +166,7 @@
             height: 4px; background: #444; border-radius: 2px;
         }
 
-        input[type=date], input[type=text] {
+        input[type=date], input[type=text], input[type=number] {
             width: 100%; background: #333; color: white; border: 1px solid #555;
             padding: 5px; border-radius: 3px; font-family: sans-serif;
             box-sizing: border-box;
@@ -211,14 +211,14 @@
             padding: 8px; border-radius: 3px; width: 100%; font-size: 13px; cursor: pointer;
         }
 
-        #load-btn {
+        #load-btn, #render-btn {
             width: 100%; background: cyan; color: black; border: none;
             padding: 10px; font-weight: bold; cursor: pointer;
             margin-bottom: 20px; border-radius: 4px;
             text-transform: uppercase; letter-spacing: 1px;
             transition: background 0.2s;
         }
-        #load-btn:hover { background: #ccffff; }
+        #load-btn:hover, #render-btn:hover { background: #ccffff; }
 
         #chart-container { height: 100vh; width: 100%; }
 
@@ -316,6 +316,7 @@
         }
         body.light-mode input[type=date],
         body.light-mode input[type=text],
+        body.light-mode input[type=number],
         body.light-mode select {
             background: white;
             color: #333;
@@ -342,11 +343,11 @@
             background: #ddd;
             accent-color: #008080;
         }
-        body.light-mode #load-btn {
+        body.light-mode #load-btn, body.light-mode #render-btn {
             background: #008080;
             color: white;
         }
-        body.light-mode #load-btn:hover {
+        body.light-mode #load-btn:hover, body.light-mode #render-btn:hover {
             background: #006666;
         }
         body.light-mode .search-btn {
@@ -547,6 +548,29 @@
             <label for="plates-checkbox">Tectonic Plates</label>
             <input type="checkbox" id="plates-checkbox" checked>
         </div>
+
+        <h3>Render Frames</h3>
+        <div class="control-group">
+            <label>Filename & Format</label>
+            <div style="display:flex; gap:5px;">
+                <input type="text" id="filename-pattern" value="frame_####" style="flex:2;">
+                <select id="render-format" style="flex:1;">
+                    <option value="png" selected>.png</option>
+                    <option value="jpeg">.jpg</option>
+                    <option value="webp">.webp</option>
+                    <option value="svg">.svg</option>
+                </select>
+            </div>
+        </div>
+        <div class="control-group">
+            <label>Frames (Rotation): <span id="frame-count-val" class="val">360</span></label>
+            <input type="range" id="frame-slider" min="1" max="32" step="0.001" value="18.9737">
+        </div>
+        <div class="control-group">
+            <label>Resolution Scale: <span id="render-scale-val" class="val">1x</span></label>
+            <input type="range" id="render-scale" min="1" max="4" step="0.5" value="1">
+        </div>
+        <button id="render-btn">Save Frames</button>
     </div>
 
     <div id="chart-container"></div>
@@ -592,6 +616,28 @@
         let autoRotate = true;
         let frameCounter = 0;
         let isLightMode = false;
+
+        // --- Helper Function for Frame Calc ---
+        function getFrameCount() {
+            const val = parseFloat(document.getElementById('frame-slider').value);
+            // Square law: x^2 mapping
+            // Range 1..32 maps to 1..1024
+            return Math.round(val * val);
+        }
+
+        // --- Global Error Helper ---
+        function showError(msg) {
+            const loadingDiv = document.getElementById('loading');
+            loadingDiv.innerText = "Error: " + msg;
+            loadingDiv.style.color = '#ff4444';
+            loadingDiv.style.display = 'block';
+
+            setTimeout(() => {
+                loadingDiv.style.display = 'none';
+                loadingDiv.style.color = 'cyan';
+                loadingDiv.innerText = "Initializing...";
+            }, 3000);
+        }
 
         // --- UI Logic ---
         function toggleMenu() {
@@ -894,6 +940,533 @@
             return { x: gx, y: gy, z: gz };
         }
 
+        // Frame Rendering
+        async function renderFrames() {
+            const loading = document.getElementById('loading');
+
+            // Check File System Access API support
+            if (!window.showDirectoryPicker) {
+                loading.style.display = 'block';
+                loading.innerText = "Error: Browser not supported. Use Chrome/Edge/Opera.";
+                loading.style.color = 'red';
+                setTimeout(() => {
+                    loading.style.display = 'none';
+                    loading.style.color = 'cyan';
+                    loading.innerText = "Initializing...";
+                }, 4000);
+                return;
+            }
+
+            // Get filename pattern from UI
+            const filenamePattern = document.getElementById('filename-pattern').value || "frame_####";
+            const format = document.getElementById('render-format').value; // "png", "jpeg", etc.
+
+            // Get user directory
+            let dirHandle;
+            try {
+                dirHandle = await window.showDirectoryPicker();
+            } catch (e) {
+                if (e.name === 'AbortError') return;
+                console.warn("File System Error:", e);
+                showError(e.message || "Folder access cancelled or failed.");
+                return;
+            }
+
+            // Stop auto-rotation NOW, just before rendering starts
+            autoRotate = false;
+            document.getElementById('rotate-btn').innerHTML = '▶';
+
+            // Get inputs
+            const multiplier = parseFloat(document.getElementById('render-scale').value) || 1;
+            const graphDiv = document.getElementById('chart-container');
+
+            const renderW = graphDiv.clientWidth * multiplier;
+            const renderH = graphDiv.clientHeight * multiplier;
+
+            // Logarithmic Frame count (Square Law Fix)
+            const numFrames = getFrameCount();
+
+            loading.style.display = 'block';
+            loading.style.color = 'cyan';
+
+            // HIDE COLORBAR (Simple approach: switch color mode to date momentarily or set showscale false)
+            // We need to update trace properties.
+            // Store original props
+            const originalMarkerSize = parseFloat(document.getElementById('size-slider').value);
+            const originalBorderWidth = isLightMode ? 4 : 1;
+            const originalPlateWidth = isLightMode ? 4 : 2;
+
+            // Apply Scaling & Hide Colorbar
+            // For trace updates we use restyle. For layout relayout.
+            // Hide colorbar: trace index 4 is the main quake trace.
+            const scaledMarkerSize = originalMarkerSize * multiplier;
+            const scaledBorderWidth = originalBorderWidth * multiplier;
+            const scaledPlateWidth = originalPlateWidth * multiplier;
+
+            // Update styling for render
+            await Plotly.restyle(graphDiv, {
+                'marker.showscale': false, // Hide colorbar
+                'marker.size': scaledMarkerSize
+            }, [4]); // Quake trace
+
+            await Plotly.restyle(graphDiv, {
+                'line.width': scaledBorderWidth
+            }, [1]); // Border trace
+
+             await Plotly.restyle(graphDiv, {
+                'line.width': scaledPlateWidth
+            }, [2]); // Plate trace
+
+
+            // Rendering Loop
+            const currentCenter = currentCamera.center || {x: 0, y: 0, z: 0};
+
+            const startEye = { ...currentCamera.eye };
+            const dx = startEye.x - currentCenter.x;
+            const dy = startEye.y - currentCenter.y;
+            const startZ = startEye.z;
+
+            // Helper to wait for redraw
+            const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+            // Helper for filename generation
+            function generateFilename(template, index) {
+                const numStr = (index + 1).toString();
+                const hashMatch = template.match(/(#+)/);
+
+                let base = template;
+
+                if (hashMatch) {
+                    const len = hashMatch[1].length;
+                    const padded = numStr.padStart(len, '0');
+                    base = template.replace(hashMatch[1], padded);
+                } else {
+                    // If no hash, pad with 4 zeros anyway
+                    const padded = numStr.padStart(4, '0');
+                    base = template + '_' + padded;
+                }
+
+                // Ensure correct extension
+                if (!base.toLowerCase().endsWith('.' + format)) {
+                    base += '.' + format;
+                }
+
+                return base;
+            }
+
+            try {
+                for (let i = 0; i < numFrames; i++) {
+                    loading.innerText = `Rendering frame ${i + 1}/${numFrames}...`;
+
+                    const angle = (i / numFrames) * 2 * Math.PI;
+
+                    // Rotate
+                    const newDx = dx * Math.cos(angle) - dy * Math.sin(angle);
+                    const newDy = dx * Math.sin(angle) + dy * Math.cos(angle);
+
+                    const newEye = {
+                        x: currentCenter.x + newDx,
+                        y: currentCenter.y + newDy,
+                        z: startZ
+                    };
+
+                    // Update Camera
+                    await Plotly.relayout(graphDiv, { 'scene.camera.eye': newEye });
+
+                    // Small delay to ensure render
+                    await wait(50);
+
+                    const dataUrl = await Plotly.toImage(graphDiv, {
+                        format: format,
+                        width: renderW,
+                        height: renderH
+                    });
+
+                    const res = await fetch(dataUrl);
+                    const blob = await res.blob();
+
+                    // Write to File System
+                    const fileName = generateFilename(filenamePattern, i);
+                    const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                }
+
+                loading.innerText = "Done!";
+
+                // RESTORE Styling
+                 await Plotly.restyle(graphDiv, {
+                    'marker.showscale': true,
+                    'marker.size': originalMarkerSize // This might need calculating per-point again if simple update fails, but for constant size its fine.
+                    // Wait, marker size is an array in updatePlot. Restyling with a single number makes all same size.
+                    // We need to trigger full updatePlot to restore correct sizing logic.
+                }, [4]);
+
+                // Trigger full update to restore complex size logic and line widths
+                updatePlot();
+
+                setTimeout(() => { loading.style.display = 'none'; loading.innerText = "Initializing..."; }, 2000);
+
+            } catch (err) {
+                 console.warn("Render Error:", err);
+                 loading.innerText = "Error during rendering.";
+                 loading.style.color = "red";
+                 setTimeout(() => {
+                    loading.style.display = 'none';
+                    loading.style.color = 'cyan';
+                    loading.innerText = "Initializing...";
+                }, 4000);
+                 // Try to restore on error too
+                 updatePlot();
+            }
+        }
+
+        async function fetchDataAndPlot(isInitial = false) {
+            const loading = document.getElementById('loading');
+            loading.style.display = 'block';
+            loading.innerText = "Querying USGS...";
+
+            try {
+                const start = document.getElementById('start-date').value;
+                const end = document.getElementById('end-date').value;
+                const minMag = document.getElementById('min-mag-slider').value;
+                const maxMag = document.getElementById('max-mag-slider').value;
+                const minDepth = document.getElementById('min-depth-filter').value;
+                const maxDepth = document.getElementById('max-depth-filter').value;
+                const limit = document.getElementById('limit-select').value;
+
+                let url = `${USGS_BASE_URL}&starttime=${start}`;
+                if (end) url += `&endtime=${end}`;
+
+                if(parseFloat(minMag) > 0) url += `&minmagnitude=${minMag}`;
+                if(parseFloat(maxMag) < 10) url += `&maxmagnitude=${maxMag}`;
+                url += `&mindepth=${minDepth}&maxdepth=${maxDepth}`;
+                url += `&limit=${limit}`;
+
+                console.log("Fetching: " + url);
+
+                const res = await fetch(url);
+                if (!res.ok) throw new Error("API Limit or Network Error");
+                const quakeJson = await res.json();
+
+                stats = { maxMag: 0, maxDepth: 0, minTime: Infinity, maxTime: -Infinity, avgMag: 0, minMag: Infinity, minDepth: Infinity };
+                let totalMag = 0, count = 0, totalRealMag = 0, totalDepth = 0;
+
+                // Counters for log report
+                let magCounts = { "0-3": 0, "3-5": 0, "5-7": 0, "7+": 0 };
+                let depthCounts = { "Shallow (<70km)": 0, "Intermediate (70-300km)": 0, "Deep (>300km)": 0 };
+
+                rawQuakeData = quakeJson.features.map(f => {
+                    const realMag = f.properties.mag || 0;
+                    const visualMag = Math.max(realMag, 0.1);
+                    const depth = f.geometry.coordinates[2];
+                    const time = f.properties.time;
+
+                    if (realMag < stats.minMag) stats.minMag = realMag;
+                    if (realMag > stats.maxMag) stats.maxMag = realMag;
+                    if (depth < stats.minDepth) stats.minDepth = depth;
+                    if (depth > stats.maxDepth) stats.maxDepth = depth;
+                    if (time < stats.minTime) stats.minTime = time;
+                    if (time > stats.maxTime) stats.maxTime = time;
+
+                    totalMag += visualMag;
+                    totalRealMag += realMag;
+                    totalDepth += depth;
+                    count++;
+
+                    // Stats logic
+                    if (realMag < 3) magCounts["0-3"]++;
+                    else if (realMag < 5) magCounts["3-5"]++;
+                    else if (realMag < 7) magCounts["5-7"]++;
+                    else magCounts["7+"]++;
+
+                    if (depth < 70) depthCounts["Shallow (<70km)"]++;
+                    else if (depth < 300) depthCounts["Intermediate (70-300km)"]++;
+                    else depthCounts["Deep (>300km)"]++;
+
+                    return {
+                        lat: f.geometry.coordinates[1],
+                        lon: f.geometry.coordinates[0],
+                        depth: depth,
+                        mag: visualMag,
+                        realMag: realMag,
+                        time: time,
+                        place: f.properties.place || "Unknown",
+                        url: f.properties.url
+                    };
+                });
+
+                if (count === 0) {
+                    stats.minMag = 0; stats.maxMag = 0; stats.minDepth = 0; stats.maxDepth = 0;
+                    stats.minTime = Date.now(); stats.maxTime = Date.now();
+                }
+
+                stats.avgMag = count > 0 ? (totalMag / count) : 0;
+                const realAvgMag = count > 0 ? (totalRealMag / count) : 0;
+                const avgDepth = count > 0 ? (totalDepth / count) : 0;
+
+                console.log("================ DATA REPORT ================");
+                console.log(`Total Events: ${count}`);
+                console.log(`Date Range: ${new Date(stats.minTime).toLocaleDateString()} to ${new Date(stats.maxTime).toLocaleDateString()}`);
+                console.log(`Magnitude: Min ${stats.minMag.toFixed(2)} | Max ${stats.maxMag.toFixed(2)} | Avg ${realAvgMag.toFixed(2)}`);
+                console.log(`Depth: Min ${stats.minDepth.toFixed(1)}km | Max ${stats.maxDepth.toFixed(1)}km`);
+                console.log("---------------------------------------------");
+                console.table(magCounts);
+                console.table(depthCounts);
+                console.log("=============================================");
+
+                document.getElementById('info-overlay').innerText = `Data: ${count} earthquakes. Source: USGS.`;
+
+                loading.style.display = 'none';
+
+                // Show all immediately
+                updatePlot(isInitial);
+
+            } catch (err) {
+                console.error(err);
+                loading.innerText = "Error: " + err.message;
+            }
+        }
+
+        function animateGlobe() {
+            const graphDiv = document.getElementById('chart-container');
+            const scene = graphDiv._fullLayout ? graphDiv._fullLayout.scene : null;
+
+            if (scene && scene.camera && autoRotate) {
+                const cos = Math.cos(ROTATION_SPEED);
+                const sin = Math.sin(ROTATION_SPEED);
+
+                const currentEye = currentCamera.eye;
+                // Fix: Ensure center has coordinates. If {} or null, use default.
+                let currentCenter = currentCamera.center;
+                if (!currentCenter || typeof currentCenter.x === 'undefined') {
+                    currentCenter = {x: 0, y: 0, z: 0};
+                }
+
+                // Calculate vector relative to the center of rotation (the focus point)
+                const dx = currentEye.x - currentCenter.x;
+                const dy = currentEye.y - currentCenter.y;
+
+                // Rotate the relative vector
+                const newDx = dx * cos - dy * sin;
+                const newDy = dx * sin + dy * cos;
+
+                // Apply back to absolute coordinates
+                const newEye = {
+                    x: currentCenter.x + newDx,
+                    y: currentCenter.y + newDy,
+                    z: currentEye.z
+                };
+
+                currentCamera.eye = newEye;
+
+                Plotly.relayout('chart-container', {
+                    'scene.camera.eye': newEye
+                });
+            }
+            requestAnimationFrame(animateGlobe);
+        }
+
+        function updateLabels() {
+            document.getElementById('size-val').innerText = parseFloat(document.getElementById('size-slider').value).toFixed(1);
+            document.getElementById('mag-val').innerText = parseFloat(document.getElementById('mag-slider').value).toFixed(2);
+            document.getElementById('depth-val').innerText = parseFloat(document.getElementById('depth-slider').value).toFixed(1);
+
+            document.getElementById('min-mag-val').innerText = document.getElementById('min-mag-slider').value;
+            document.getElementById('max-mag-val').innerText = document.getElementById('max-mag-slider').value;
+            document.getElementById('min-depth-filter-val').innerText = document.getElementById('min-depth-filter').value;
+            document.getElementById('max-depth-filter-val').innerText = document.getElementById('max-depth-filter').value;
+
+            // Update frame count display (Square Law)
+            document.getElementById('frame-count-val').innerText = getFrameCount();
+
+            // Update Scale Label
+            document.getElementById('render-scale-val').innerText = document.getElementById('render-scale').value + "x";
+        }
+
+        function calculateResponsiveCamera() {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const aspectRatio = width / height;
+            const baseDistance = 0.9;
+            let finalDistance = (aspectRatio >= 1) ? baseDistance : Math.max(1.5, baseDistance / aspectRatio);
+
+            return {
+                eye: { x: finalDistance, y: finalDistance, z: finalDistance * 0.5 },
+                center: { x: 0, y: 0, z: 0 },
+                up: { x: 0, y: 0, z: 1 }
+            };
+        }
+
+        function updatePlot(isInitial = false) {
+            const baseSize = parseFloat(document.getElementById('size-slider').value);
+            const magBonusScale = parseFloat(document.getElementById('mag-slider').value);
+            const depthScale = parseFloat(document.getElementById('depth-slider').value);
+
+            // Checkbox logic replacing slider logic
+            const bordersEnabled = document.getElementById('borders-checkbox').checked;
+            const platesEnabled = document.getElementById('plates-checkbox').checked;
+            const showLabels = document.getElementById('labels-checkbox').checked;
+            const labelSize = showLabels ? 12 : 0;
+
+            // Light Mode check
+            // Use dark grey for borders in light mode for better contrast
+            const bgColor = isLightMode ? 'white' : 'black';
+            const gridColor = isLightMode ? '#e0e0e0' : '#333';
+            const borderColor = isLightMode ? '#444444' : '#00ffff';
+
+            // Lighter blue for plates in light mode to distinguish from grey borders
+            const plateColor = isLightMode ? '#4169E1' : '#1E90FF';
+
+            const labelColor = isLightMode ? 'rgba(0,0,0,0.7)' : 'rgba(180, 180, 180, 0.9)';
+
+            // Thicker borders in Light Mode for visibility
+            const borderWidth = bordersEnabled ? (isLightMode ? 4 : 1) : 0;
+            const plateWidth = platesEnabled ? (isLightMode ? 4 : 2) : 0;
+
+            const selectedPalette = document.getElementById('color-select').value;
+            const colorMode = document.getElementById('color-mode').value;
+
+            const qx = [], qy = [], qz = [], sizes = [], ghostSizes = [], colors = [], texts = [];
+            const customData = []; // To store full object references for click events
+
+            const MIDPOINT = 1.618;
+
+            for (const q of rawQuakeData) {
+                const r_quake = EARTH_RADIUS - (q.depth * depthScale);
+                const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
+                qx.push(x); qy.push(y); qz.push(z);
+
+                let sizeFactor = q.mag;
+                if (q.mag > MIDPOINT) {
+                    const diff = q.mag - MIDPOINT;
+                    sizeFactor += (Math.pow(diff, 3) * magBonusScale);
+                }
+                const s = baseSize * (sizeFactor / 2.5);
+                sizes.push(s);
+                ghostSizes.push(Math.max(s * 2, 10));
+
+                // Add full object to custom data
+                customData.push(q);
+
+                if (colorMode === 'depth') colors.push(q.depth);
+                else if (colorMode === 'mag') colors.push(q.mag);
+                else colors.push(q.time);
+
+                const d = new Date(q.time);
+                const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                texts.push(
+                    `<b>${q.place}</b><br>` +
+                    `Date: ${dateStr}<br>` +
+                    `Magnitude: ${q.realMag.toFixed(2)}<br>` +
+                    `Depth: ${q.depth.toFixed(2)}km`
+                );
+            }
+
+            let colorSettings = {
+                colorscale: selectedPalette,
+                colorbar: {
+                    x: 0, len: 0.5, thickness: 15,
+                    titlefont: {color: isLightMode ? '#333' : 'white'},
+                    tickfont: {color: isLightMode ? '#333' : 'white'}
+                }
+            };
+
+            if (colorMode === 'depth') {
+                colorSettings.title = 'Depth (km)';
+                colorSettings.cmin = 0;
+                colorSettings.cmax = Math.ceil(stats.maxDepth / 100) * 100;
+            } else if (colorMode === 'mag') {
+                colorSettings.title = 'Magnitude';
+                colorSettings.cmin = 0;
+                colorSettings.cmax = 9;
+            } else {
+                colorSettings.title = 'Date';
+                colorSettings.cmin = stats.minTime;
+                colorSettings.cmax = stats.maxTime;
+            }
+
+            const gridTrace = {
+                type: 'scatter3d', mode: 'lines',
+                x: staticGridArrays.x, y: staticGridArrays.y, z: staticGridArrays.z,
+                line: { color: gridColor, width: 1 }, opacity: 0.5, hoverinfo: 'skip'
+            };
+
+            const borderTrace = {
+                type: 'scatter3d', mode: 'lines',
+                x: staticBorderArrays.x, y: staticBorderArrays.y, z: staticBorderArrays.z,
+                line: { color: borderColor, width: borderWidth }, opacity: 0.4, hoverinfo: 'skip',
+                visible: borderWidth > 0
+            };
+
+            const plateTrace = {
+                type: 'scatter3d', mode: 'lines',
+                x: staticPlateArrays.x, y: staticPlateArrays.y, z: staticPlateArrays.z,
+                line: { color: plateColor, width: plateWidth }, opacity: 0.8, hoverinfo: 'skip',
+                visible: plateWidth > 0
+            };
+
+            // New Country Labels Trace
+            const labelTrace = {
+                type: 'scatter3d',
+                mode: 'text',
+                x: staticLabelArrays.x,
+                y: staticLabelArrays.y,
+                z: staticLabelArrays.z,
+                text: staticLabelArrays.text,
+                textfont: {
+                    color: labelColor,
+                    size: labelSize,
+                    family: 'sans-serif'
+                },
+                hoverinfo: 'none',
+                visible: labelSize > 0 // Hide if size is 0
+            };
+
+            const quakeTrace = {
+                type: 'scatter3d', mode: 'markers',
+                x: qx, y: qy, z: qz,
+                hoverinfo: 'skip',
+                customdata: customData, // Pass full object to click event
+                marker: {
+                    size: sizes, color: colors,
+                    colorscale: colorSettings.colorscale, cmin: colorSettings.cmin, cmax: colorSettings.cmax,
+                    colorbar: colorSettings.colorbar, opacity: 1.0, line: { width: 0 }
+                }
+            };
+
+            const ghostTrace = {
+                type: 'scatter3d', mode: 'markers',
+                x: qx, y: qy, z: qz,
+                text: texts, hoverinfo: 'text',
+                customdata: customData, // FIX: Pass full object to ghost trace too!
+                marker: { size: ghostSizes, color: 'rgba(0,0,0,0)', opacity: 0.0 }
+            };
+
+            const layout = {
+                paper_bgcolor: bgColor,
+                plot_bgcolor: bgColor,
+                margin: { l: 0, r: 0, t: 0, b: 0 },
+                hovermode: 'closest',
+                scene: {
+                    xaxis: { visible: false, showbackground: false },
+                    yaxis: { visible: false, showbackground: false },
+                    zaxis: { visible: false, showbackground: false },
+                    aspectmode: 'data',
+                    dragmode: 'orbit'
+                },
+                showlegend: false
+            };
+
+            if (isInitial) {
+                currentCamera = calculateResponsiveCamera();
+            }
+            layout.scene.camera = currentCamera;
+
+            Plotly.react('chart-container', [gridTrace, borderTrace, plateTrace, labelTrace, quakeTrace, ghostTrace], layout, {responsive: true});
+        }
+
         // --- Main App Logic ---
         async function initApp() {
             try {
@@ -964,6 +1537,10 @@
                     });
                 });
 
+                // Handle frame slider separately (UI only)
+                document.getElementById('frame-slider').addEventListener('input', updateLabels);
+                document.getElementById('render-scale').addEventListener('input', updateLabels);
+
                 // Listen for checkbox change
                 document.getElementById('labels-checkbox').addEventListener('change', () => updatePlot());
                 document.getElementById('borders-checkbox').addEventListener('change', () => updatePlot());
@@ -1000,6 +1577,9 @@
                     autoRotate = true;
                     document.getElementById('rotate-btn').innerHTML = '❚❚';
                 });
+
+                // Render frames
+                document.getElementById('render-btn').addEventListener('click', renderFrames);
 
                 // GPS Button
                 document.getElementById('gps-btn').addEventListener('click', () => {
@@ -1051,6 +1631,7 @@
                             document.getElementById('rotate-btn').innerHTML = '▶';
                         },
                         (error) => {
+                            console.warn("GPS Error:", error);
                             let msg = "Location access denied or unavailable.";
                             if (error.code === 1) msg = "Location permission denied.";
                             else if (error.code === 2) msg = "Location unavailable.";
@@ -1065,7 +1646,7 @@
 
                 function showError(msg) {
                     const loadingDiv = document.getElementById('loading');
-                    loadingDiv.innerText = "Error: " + msg; // Added prefix
+                    loadingDiv.innerText = "Error: " + msg;
                     loadingDiv.style.color = '#ff4444';
                     loadingDiv.style.display = 'block';
 
@@ -1287,341 +1868,6 @@
                 console.error("Critical Error:", err);
                 document.getElementById('loading').innerText = "Error initializing app.";
             }
-        }
-
-        async function fetchDataAndPlot(isInitial = false) {
-            const loading = document.getElementById('loading');
-            loading.style.display = 'block';
-            loading.innerText = "Querying USGS...";
-
-            try {
-                const start = document.getElementById('start-date').value;
-                const end = document.getElementById('end-date').value;
-                const minMag = document.getElementById('min-mag-slider').value;
-                const maxMag = document.getElementById('max-mag-slider').value;
-                const minDepth = document.getElementById('min-depth-filter').value;
-                const maxDepth = document.getElementById('max-depth-filter').value;
-                const limit = document.getElementById('limit-select').value;
-
-                let url = `${USGS_BASE_URL}&starttime=${start}`;
-                if (end) url += `&endtime=${end}`;
-
-                if(parseFloat(minMag) > 0) url += `&minmagnitude=${minMag}`;
-                if(parseFloat(maxMag) < 10) url += `&maxmagnitude=${maxMag}`;
-                url += `&mindepth=${minDepth}&maxdepth=${maxDepth}`;
-                url += `&limit=${limit}`;
-
-                console.log("Fetching: " + url);
-
-                const res = await fetch(url);
-                if (!res.ok) throw new Error("API Limit or Network Error");
-                const quakeJson = await res.json();
-
-                stats = { maxMag: 0, maxDepth: 0, minTime: Infinity, maxTime: -Infinity, avgMag: 0, minMag: Infinity, minDepth: Infinity };
-                let totalMag = 0, count = 0, totalRealMag = 0, totalDepth = 0;
-
-                // Counters for log report
-                let magCounts = { "0-3": 0, "3-5": 0, "5-7": 0, "7+": 0 };
-                let depthCounts = { "Shallow (<70km)": 0, "Intermediate (70-300km)": 0, "Deep (>300km)": 0 };
-
-                rawQuakeData = quakeJson.features.map(f => {
-                    const realMag = f.properties.mag || 0;
-                    const visualMag = Math.max(realMag, 0.1);
-                    const depth = f.geometry.coordinates[2];
-                    const time = f.properties.time;
-
-                    if (realMag < stats.minMag) stats.minMag = realMag;
-                    if (realMag > stats.maxMag) stats.maxMag = realMag;
-                    if (depth < stats.minDepth) stats.minDepth = depth;
-                    if (depth > stats.maxDepth) stats.maxDepth = depth;
-                    if (time < stats.minTime) stats.minTime = time;
-                    if (time > stats.maxTime) stats.maxTime = time;
-
-                    totalMag += visualMag;
-                    totalRealMag += realMag;
-                    totalDepth += depth;
-                    count++;
-
-                    // Stats logic
-                    if (realMag < 3) magCounts["0-3"]++;
-                    else if (realMag < 5) magCounts["3-5"]++;
-                    else if (realMag < 7) magCounts["5-7"]++;
-                    else magCounts["7+"]++;
-
-                    if (depth < 70) depthCounts["Shallow (<70km)"]++;
-                    else if (depth < 300) depthCounts["Intermediate (70-300km)"]++;
-                    else depthCounts["Deep (>300km)"]++;
-
-                    return {
-                        lat: f.geometry.coordinates[1],
-                        lon: f.geometry.coordinates[0],
-                        depth: depth,
-                        mag: visualMag,
-                        realMag: realMag,
-                        time: time,
-                        place: f.properties.place || "Unknown",
-                        url: f.properties.url
-                    };
-                });
-
-                if (count === 0) {
-                    stats.minMag = 0; stats.maxMag = 0; stats.minDepth = 0; stats.maxDepth = 0;
-                    stats.minTime = Date.now(); stats.maxTime = Date.now();
-                }
-
-                stats.avgMag = count > 0 ? (totalMag / count) : 0;
-                const realAvgMag = count > 0 ? (totalRealMag / count) : 0;
-                const avgDepth = count > 0 ? (totalDepth / count) : 0;
-
-                console.log("================ DATA REPORT ================");
-                console.log(`Total Events: ${count}`);
-                console.log(`Date Range: ${new Date(stats.minTime).toLocaleDateString()} to ${new Date(stats.maxTime).toLocaleDateString()}`);
-                console.log(`Magnitude: Min ${stats.minMag.toFixed(2)} | Max ${stats.maxMag.toFixed(2)} | Avg ${realAvgMag.toFixed(2)}`);
-                console.log(`Depth: Min ${stats.minDepth.toFixed(1)}km | Max ${stats.maxDepth.toFixed(1)}km`);
-                console.log("---------------------------------------------");
-                console.table(magCounts);
-                console.table(depthCounts);
-                console.log("=============================================");
-
-                document.getElementById('info-overlay').innerText = `Data: ${count} earthquakes. Source: USGS.`;
-
-                loading.style.display = 'none';
-
-                // Show all immediately
-                updatePlot(isInitial);
-
-            } catch (err) {
-                console.error(err);
-                loading.innerText = "Error: " + err.message;
-            }
-        }
-
-        function animateGlobe() {
-            const graphDiv = document.getElementById('chart-container');
-            const scene = graphDiv._fullLayout ? graphDiv._fullLayout.scene : null;
-
-            if (scene && scene.camera && autoRotate) {
-                const cos = Math.cos(ROTATION_SPEED);
-                const sin = Math.sin(ROTATION_SPEED);
-
-                const currentEye = currentCamera.eye;
-                const currentCenter = currentCamera.center || {x: 0, y: 0, z: 0};
-
-                // Calculate vector relative to the center of rotation (the focus point)
-                const dx = currentEye.x - currentCenter.x;
-                const dy = currentEye.y - currentCenter.y;
-
-                // Rotate the relative vector
-                const newDx = dx * cos - dy * sin;
-                const newDy = dx * sin + dy * cos;
-
-                // Apply back to absolute coordinates
-                const newEye = {
-                    x: currentCenter.x + newDx,
-                    y: currentCenter.y + newDy,
-                    z: currentEye.z
-                };
-
-                currentCamera.eye = newEye;
-
-                Plotly.relayout('chart-container', {
-                    'scene.camera.eye': newEye
-                });
-            }
-            requestAnimationFrame(animateGlobe);
-        }
-
-        function updateLabels() {
-            document.getElementById('size-val').innerText = parseFloat(document.getElementById('size-slider').value).toFixed(1);
-            document.getElementById('mag-val').innerText = parseFloat(document.getElementById('mag-slider').value).toFixed(2);
-            document.getElementById('depth-val').innerText = parseFloat(document.getElementById('depth-slider').value).toFixed(1);
-
-            document.getElementById('min-mag-val').innerText = document.getElementById('min-mag-slider').value;
-            document.getElementById('max-mag-val').innerText = document.getElementById('max-mag-slider').value;
-            document.getElementById('min-depth-filter-val').innerText = document.getElementById('min-depth-filter').value;
-            document.getElementById('max-depth-filter-val').innerText = document.getElementById('max-depth-filter').value;
-        }
-
-        function calculateResponsiveCamera() {
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-            const aspectRatio = width / height;
-            const baseDistance = 0.9;
-            let finalDistance = (aspectRatio >= 1) ? baseDistance : Math.max(1.5, baseDistance / aspectRatio);
-
-            return {
-                eye: { x: finalDistance, y: finalDistance, z: finalDistance * 0.5 },
-                center: { x: 0, y: 0, z: 0 },
-                up: { x: 0, y: 0, z: 1 }
-            };
-        }
-
-        function updatePlot(isInitial = false) {
-            const baseSize = parseFloat(document.getElementById('size-slider').value);
-            const magBonusScale = parseFloat(document.getElementById('mag-slider').value);
-            const depthScale = parseFloat(document.getElementById('depth-slider').value);
-
-            // Checkbox logic replacing slider logic
-            const bordersEnabled = document.getElementById('borders-checkbox').checked;
-            const platesEnabled = document.getElementById('plates-checkbox').checked;
-            const showLabels = document.getElementById('labels-checkbox').checked;
-            const labelSize = showLabels ? 12 : 0;
-
-            // Light Mode check
-            // Use dark grey for borders in light mode for better contrast
-            const bgColor = isLightMode ? 'white' : 'black';
-            const gridColor = isLightMode ? '#e0e0e0' : '#333';
-            const borderColor = isLightMode ? '#444444' : '#00ffff';
-
-            // Lighter blue for plates in light mode to distinguish from grey borders
-            const plateColor = isLightMode ? '#4169E1' : '#1E90FF';
-
-            const labelColor = isLightMode ? 'rgba(0,0,0,0.7)' : 'rgba(180, 180, 180, 0.9)';
-
-            // Thicker borders in Light Mode for visibility
-            const borderWidth = bordersEnabled ? (isLightMode ? 4 : 1) : 0;
-            const plateWidth = platesEnabled ? (isLightMode ? 4 : 2) : 0;
-
-            const selectedPalette = document.getElementById('color-select').value;
-            const colorMode = document.getElementById('color-mode').value;
-
-            const qx = [], qy = [], qz = [], sizes = [], ghostSizes = [], colors = [], texts = [];
-            const customData = []; // To store full object references for click events
-
-            const MIDPOINT = 1.618;
-
-            for (const q of rawQuakeData) {
-                const r_quake = EARTH_RADIUS - (q.depth * depthScale);
-                const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
-                qx.push(x); qy.push(y); qz.push(z);
-
-                let sizeFactor = q.mag;
-                if (q.mag > MIDPOINT) {
-                    const diff = q.mag - MIDPOINT;
-                    sizeFactor += (Math.pow(diff, 3) * magBonusScale);
-                }
-                const s = baseSize * (sizeFactor / 2.5);
-                sizes.push(s);
-                ghostSizes.push(Math.max(s * 2, 10));
-
-                // Add full object to custom data
-                customData.push(q);
-
-                if (colorMode === 'depth') colors.push(q.depth);
-                else if (colorMode === 'mag') colors.push(q.mag);
-                else colors.push(q.time);
-
-                const d = new Date(q.time);
-                const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-                texts.push(
-                    `<b>${q.place}</b><br>` +
-                    `Date: ${dateStr}<br>` +
-                    `Magnitude: ${q.realMag.toFixed(2)}<br>` +
-                    `Depth: ${q.depth.toFixed(2)}km`
-                );
-            }
-
-            let colorSettings = {
-                colorscale: selectedPalette,
-                colorbar: {
-                    x: 0, len: 0.5, thickness: 15,
-                    titlefont: {color: isLightMode ? '#333' : 'white'},
-                    tickfont: {color: isLightMode ? '#333' : 'white'}
-                }
-            };
-
-            if (colorMode === 'depth') {
-                colorSettings.title = 'Depth (km)';
-                colorSettings.cmin = 0;
-                colorSettings.cmax = Math.ceil(stats.maxDepth / 100) * 100;
-            } else if (colorMode === 'mag') {
-                colorSettings.title = 'Magnitude';
-                colorSettings.cmin = 0;
-                colorSettings.cmax = 9;
-            } else {
-                colorSettings.title = 'Date';
-                colorSettings.cmin = stats.minTime;
-                colorSettings.cmax = stats.maxTime;
-            }
-
-            const gridTrace = {
-                type: 'scatter3d', mode: 'lines',
-                x: staticGridArrays.x, y: staticGridArrays.y, z: staticGridArrays.z,
-                line: { color: gridColor, width: 1 }, opacity: 0.5, hoverinfo: 'skip'
-            };
-
-            const borderTrace = {
-                type: 'scatter3d', mode: 'lines',
-                x: staticBorderArrays.x, y: staticBorderArrays.y, z: staticBorderArrays.z,
-                line: { color: borderColor, width: borderWidth }, opacity: 0.4, hoverinfo: 'skip',
-                visible: borderWidth > 0
-            };
-
-            const plateTrace = {
-                type: 'scatter3d', mode: 'lines',
-                x: staticPlateArrays.x, y: staticPlateArrays.y, z: staticPlateArrays.z,
-                line: { color: plateColor, width: plateWidth }, opacity: 0.8, hoverinfo: 'skip',
-                visible: plateWidth > 0
-            };
-
-            // New Country Labels Trace
-            const labelTrace = {
-                type: 'scatter3d',
-                mode: 'text',
-                x: staticLabelArrays.x,
-                y: staticLabelArrays.y,
-                z: staticLabelArrays.z,
-                text: staticLabelArrays.text,
-                textfont: {
-                    color: labelColor,
-                    size: labelSize,
-                    family: 'sans-serif'
-                },
-                hoverinfo: 'none',
-                visible: labelSize > 0 // Hide if size is 0
-            };
-
-            const quakeTrace = {
-                type: 'scatter3d', mode: 'markers',
-                x: qx, y: qy, z: qz,
-                hoverinfo: 'skip',
-                customdata: customData, // Pass full object to click event
-                marker: {
-                    size: sizes, color: colors,
-                    colorscale: colorSettings.colorscale, cmin: colorSettings.cmin, cmax: colorSettings.cmax,
-                    colorbar: colorSettings.colorbar, opacity: 1.0, line: { width: 0 }
-                }
-            };
-
-            const ghostTrace = {
-                type: 'scatter3d', mode: 'markers',
-                x: qx, y: qy, z: qz,
-                text: texts, hoverinfo: 'text',
-                customdata: customData, // FIX: Pass full object to ghost trace too!
-                marker: { size: ghostSizes, color: 'rgba(0,0,0,0)', opacity: 0.0 }
-            };
-
-            const layout = {
-                paper_bgcolor: bgColor,
-                plot_bgcolor: bgColor,
-                margin: { l: 0, r: 0, t: 0, b: 0 },
-                hovermode: 'closest',
-                scene: {
-                    xaxis: { visible: false, showbackground: false },
-                    yaxis: { visible: false, showbackground: false },
-                    zaxis: { visible: false, showbackground: false },
-                    aspectmode: 'data',
-                    dragmode: 'orbit'
-                },
-                showlegend: false
-            };
-
-            if (isInitial) {
-                currentCamera = calculateResponsiveCamera();
-            }
-            layout.scene.camera = currentCamera;
-
-            Plotly.react('chart-container', [gridTrace, borderTrace, plateTrace, labelTrace, quakeTrace, ghostTrace], layout, {responsive: true});
         }
 
         initApp();
