@@ -606,17 +606,6 @@
                 // Clear input and disable button (No visual text feedback)
                 input.value = "";
                 btn.disabled = true;
-            } else {
-                // Only show error feedback if not found
-                const originalText = btn.innerText;
-                btn.innerText = "No Match";
-                btn.style.borderColor = "red";
-                btn.style.color = "red";
-                setTimeout(() => {
-                    btn.innerText = originalText;
-                    btn.style.borderColor = "#555";
-                    btn.style.color = "cyan";
-                }, 1500);
             }
         }
 
@@ -682,16 +671,6 @@
                 // Clear input and disable button (No visual text feedback)
                 input.value = "";
                 btn.disabled = true;
-            } else {
-                const originalText = btn.innerText;
-                btn.innerText = "No Match";
-                btn.style.borderColor = "red";
-                btn.style.color = "red";
-                setTimeout(() => {
-                    btn.innerText = originalText;
-                    btn.style.borderColor = "#555";
-                    btn.style.color = "cyan";
-                }, 1500);
             }
         }
 
@@ -978,6 +957,12 @@
                     // Check against country list (case insensitive)
                     const isValid = staticLabelArrays.text.some(name => name.toLowerCase() === val);
                     btn.disabled = !isValid;
+
+                    if (isValid && e.inputType === 'insertReplacementText') {
+                       // Direct click from datalist
+                       searchLocation();
+                       document.getElementById('search-input').blur();
+                    }
                 });
 
                 // Search Listeners (Zones)
@@ -992,6 +977,12 @@
                     // Check against zone keys (case insensitive)
                     const isValid = Object.keys(seismicBookmarks).some(k => k.toLowerCase() === val);
                     btn.disabled = !isValid;
+
+                    if (isValid && e.inputType === 'insertReplacementText') {
+                       // Direct click from datalist
+                       searchZone();
+                       document.getElementById('zone-input').blur();
+                    }
                 });
 
                 await fetchDataAndPlot(true);
@@ -1003,33 +994,119 @@
                     document.getElementById('rotate-btn').innerHTML = '▶';
                 };
 
-                // Close menu on outside click
-                graphDiv.addEventListener('mousedown', () => {
+                // HANDSHAKE STATE
+                // We separate the "Data Availability" (from Plotly) and the "Interaction Complete" (from DOM)
+                let interactionState = {
+                    isDragging: false,
+                    startX: 0,
+                    startY: 0,
+                    pointData: null,      // Stores data from plotly_click
+                    awaitingData: false   // True if mouseup happened but plotly_click hasn't fired yet
+                };
+
+                // 1. Pointer Down: Reset everything
+                graphDiv.addEventListener('pointerdown', (e) => {
                     stopRotation();
+
+                    // Close Side Panel if open
                     const panel = document.getElementById('side-panel');
                     if (panel.classList.contains('open')) {
                         panel.classList.remove('open');
                     }
-                });
 
-                // Global Key Listener for Escape
-                document.addEventListener('keydown', (e) => {
-                    if (e.key === 'Escape') {
-                        const panel = document.getElementById('side-panel');
-                        const popup = document.getElementById('quake-info');
+                    interactionState.isDragging = false;
+                    interactionState.startX = e.clientX;
+                    interactionState.startY = e.clientY;
+                    interactionState.pointData = null;
+                    interactionState.awaitingData = false;
+                }, {capture: true});
 
-                        // Priority 1: Close Side Panel
-                        if (panel.classList.contains('open')) {
-                            panel.classList.remove('open');
-                            return; // Stop here, don't close popup yet
-                        }
+                // 2. Pointer Move: Detect Drag
+                graphDiv.addEventListener('pointermove', (e) => {
+                    const dx = Math.abs(e.clientX - interactionState.startX);
+                    const dy = Math.abs(e.clientY - interactionState.startY);
 
-                        // Priority 2: Close Popup
-                        if (popup.style.display !== 'none') {
-                            popup.style.display = 'none';
-                        }
+                    if (dx > 3 || dy > 3) {
+                        interactionState.isDragging = true;
+                    }
+                }, {capture: true});
+
+                // 3. Plotly Click: Capture Data (Don't move yet unless waiting)
+                graphDiv.on('plotly_click', function(data){
+                    if(!data || !data.points || data.points.length === 0) return;
+
+                    // Store the data
+                    interactionState.pointData = data.points[0].customdata;
+
+                    // If mouseup already happened (race condition), execute immediately
+                    if (interactionState.awaitingData && !interactionState.isDragging) {
+                        executeFlyTo(interactionState.pointData);
+                        interactionState.awaitingData = false;
                     }
                 });
+
+                // 4. Pointer Up: The Trigger
+                graphDiv.addEventListener('pointerup', (e) => {
+                    if (interactionState.isDragging) return; // It was a drag, ignore
+
+                    if (interactionState.pointData) {
+                        // We already have data (plotly_click fired on down or during press)
+                        executeFlyTo(interactionState.pointData);
+                        interactionState.pointData = null; // Clear to prevent double fire
+                    } else {
+                        // We clicked, but Plotly hasn't sent data yet. Wait for it.
+                        interactionState.awaitingData = true;
+                        // Timeout to reset if we clicked empty space
+                        setTimeout(() => { interactionState.awaitingData = false; }, 200);
+                    }
+                }, {capture: true});
+
+                // Helper to perform the action
+                function executeFlyTo(q) {
+                    if (!q) return;
+
+                    // Show Popup
+                    document.getElementById('qi-place').innerText = q.place;
+                    document.getElementById('qi-mag').innerText = q.realMag.toFixed(2);
+                    document.getElementById('qi-depth').innerText = q.depth.toFixed(1);
+                    const d = new Date(q.time);
+                    document.getElementById('qi-time').innerText = d.toLocaleString();
+
+                    const link = document.getElementById('qi-link');
+                    if (q.url) {
+                        link.href = q.url;
+                        link.style.display = 'block';
+                    } else {
+                        link.style.display = 'none';
+                    }
+                    document.getElementById('quake-info').style.display = 'block';
+
+                    // Fly Camera
+                    const PLOT_SCALE = 3000 / EARTH_RADIUS;
+                    const cx = (q.lon * Math.PI/180); // Re-calc radians for raw logic if needed, but we used XYZ
+                    // Wait, we need the original XYZ from the point data or recompute
+                    // customdata (q) has lat/lon/depth. Recompute XYZ:
+                    const r_quake = EARTH_RADIUS - (q.depth * parseFloat(document.getElementById('depth-slider').value));
+                    const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
+
+                    // Apply Plot Scale
+                    const pcx = x * (PLOT_SCALE/EARTH_RADIUS) * EARTH_RADIUS; // Wait, latLonToXYZ returns Real World KM
+                    // Our Plotly scale is normalized so EARTH_RADIUS = 3000 roughly
+                    const scx = (x / EARTH_RADIUS) * PLOT_SCALE;
+                    const scy = (y / EARTH_RADIUS) * PLOT_SCALE;
+                    const scz = (z / EARTH_RADIUS) * PLOT_SCALE;
+
+                    const newCenter = { x: scx, y: scy, z: scz };
+
+                    const newCamera = {
+                        eye: { ...currentCamera.eye }, // Keep zoom level
+                        center: newCenter, // Look at point
+                        up: { ...currentCamera.up }
+                    };
+
+                    currentCamera = newCamera;
+                    Plotly.relayout('chart-container', { 'scene.camera': newCamera });
+                }
 
                 // --- EVENT BASED CAMERA TRACKING (No polling) ---
                 graphDiv.on('plotly_relayout', (eventData) => {
@@ -1048,73 +1125,25 @@
                     }
                 });
 
-                // Strict Left-Click detection for "Click to Center"
-                let isMouseDown = false;
-                let startMousePos = {x:0, y:0};
-
-                graphDiv.addEventListener('mousedown', (e) => {
-                    if(e.button === 0) {
-                        isMouseDown = true;
-                        startMousePos = {x: e.clientX, y: e.clientY};
-                    }
-                });
-
-                graphDiv.addEventListener('mouseup', (e) => {
-                    if(!isMouseDown) return;
-                    isMouseDown = false;
-                    const dx = Math.abs(e.clientX - startMousePos.x);
-                    const dy = Math.abs(e.clientY - startMousePos.y);
-                    if(dx < 5 && dy < 5) {
-                        // Click logic handled in plotly_click
-                    }
-                });
-
-                graphDiv.on('plotly_click', function(data){
-                    if(!data || !data.points || data.points.length === 0) return;
-
-                    const pt = data.points[0];
-
-                    // Retrieve full data object from customdata
-                    // The customdata was populated in updatePlot
-                    const q = pt.customdata;
-
-                    if (q) {
-                        // Populate popup
-                        document.getElementById('qi-place').innerText = q.place;
-                        document.getElementById('qi-mag').innerText = q.realMag.toFixed(2);
-                        document.getElementById('qi-depth').innerText = q.depth.toFixed(1);
-                        const d = new Date(q.time);
-                        document.getElementById('qi-time').innerText = d.toLocaleString();
-
-                        const link = document.getElementById('qi-link');
-                        if (q.url) {
-                            link.href = q.url;
-                            link.style.display = 'block';
-                        } else {
-                            link.style.display = 'none';
-                        }
-
-                        // Show popup
-                        document.getElementById('quake-info').style.display = 'block';
-                    }
-
-                    const PLOT_SCALE = 3000 / EARTH_RADIUS;
-                    const cx = (pt.x / EARTH_RADIUS) * PLOT_SCALE;
-                    const cy = (pt.y / EARTH_RADIUS) * PLOT_SCALE;
-                    const cz = (pt.z / EARTH_RADIUS) * PLOT_SCALE;
-
-                    const newCamera = {
-                        eye: { ...currentCamera.eye }, // Keep zoom
-                        center: { x: cx, y: cy, z: cz }, // Move target
-                        up: { ...currentCamera.up }
-                    };
-
-                    currentCamera = newCamera;
-                    Plotly.relayout('chart-container', { 'scene.camera': newCamera });
-                });
-
                 graphDiv.addEventListener('touchstart', stopRotation);
                 graphDiv.addEventListener('wheel', stopRotation);
+
+                // Global Key Listener for Escape
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        const panel = document.getElementById('side-panel');
+                        const popup = document.getElementById('quake-info');
+
+                        if (panel.classList.contains('open')) {
+                            panel.classList.remove('open');
+                            return;
+                        }
+
+                        if (popup.style.display !== 'none') {
+                            popup.style.display = 'none';
+                        }
+                    }
+                });
 
                 requestAnimationFrame(animateGlobe);
 
