@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">a
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Earthquake Depth Map</title>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 
@@ -17,10 +17,15 @@
             border: 1px solid cyan;
             border-radius: 4px;
             font-size: 20px;
-            padding: 5px 12px;
+            padding: 0 12px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             cursor: pointer;
             z-index: 1001;
             transition: all 0.2s;
+            box-sizing: border-box;
         }
         #menu-btn:hover { background: rgba(0, 255, 255, 0.2); }
 
@@ -32,12 +37,17 @@
             border: 1px solid cyan;
             border-radius: 4px;
             font-size: 20px;
-            padding: 5px 12px;
+            padding: 0;
+            height: 40px;
+            width: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             cursor: pointer;
             z-index: 1001;
             transition: all 0.2s;
-            width: 40px;
-            text-align: center;
+            line-height: 1;
+            box-sizing: border-box;
         }
         #theme-btn:hover { background: rgba(0, 255, 255, 0.2); }
 
@@ -49,13 +59,16 @@
             border: 1px solid cyan;
             border-radius: 4px;
             font-size: 18px;
-            padding: 7px 12px 3px 12px;
+            padding: 0;
+            height: 40px;
+            width: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             cursor: pointer;
             z-index: 1001;
             transition: all 0.2s;
-            width: 40px;
-            text-align: center;
-            height: 41px;
+            line-height: 1;
             box-sizing: border-box;
         }
         #rotate-btn:hover { background: rgba(0, 255, 255, 0.2); }
@@ -68,13 +81,16 @@
             border: 1px solid cyan;
             border-radius: 4px;
             font-size: 20px;
-            padding: 5px 12px;
+            padding: 0;
+            height: 40px;
+            width: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             cursor: pointer;
             z-index: 1001;
             transition: all 0.2s;
-            width: 40px;
-            text-align: center;
-            height: 41px;
+            line-height: 1;
             box-sizing: border-box;
         }
         #reset-btn:hover { background: rgba(0, 255, 255, 0.2); }
@@ -86,17 +102,16 @@
             color: cyan;
             border: 1px solid cyan;
             border-radius: 4px;
-            padding: 8px 0;
-            cursor: pointer;
-            z-index: 1001;
-            transition: all 0.2s;
+            padding: 0;
+            height: 40px;
             width: 40px;
-            text-align: center;
-            height: 41px;
-            box-sizing: border-box;
             display: flex;
             align-items: center;
             justify-content: center;
+            cursor: pointer;
+            z-index: 1001;
+            transition: all 0.2s;
+            box-sizing: border-box;
         }
         #gps-btn svg {
             width: 20px;
@@ -993,7 +1008,6 @@
                         return;
                     }
 
-                    // No icon change, just request logic
                     navigator.geolocation.getCurrentPosition(
                         (position) => {
                             const lat = position.coords.latitude;
