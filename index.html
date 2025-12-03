@@ -220,7 +220,12 @@
         }
         #load-btn:hover, #render-btn:hover { background: #ccffff; }
 
-        #chart-container { height: 100vh; width: 100%; touch-action: none; }
+        /* Force touch actions to be handled by JS (Plotly) */
+        #chart-container, .js-plotly-plot, .plot-container {
+            height: 100vh;
+            width: 100%;
+            touch-action: none !important;
+        }
 
         #info-overlay {
             position: absolute; bottom: 15px; left: 15px;
@@ -433,7 +438,7 @@
         <a href="#" target="_blank" id="qi-link">View on USGS ↗</a>
     </div>
 
-    <button id="menu-btn">☰ Config</button>
+    <button id="menu-btn">☰ Settings</button>
 
     <div id="side-panel">
         <button id="close-btn">×</button>
@@ -1013,6 +1018,9 @@
             const graphDiv = document.getElementById('chart-container');
             const originalW = graphDiv.clientWidth;
             const originalH = graphDiv.clientHeight;
+
+            // Sync camera for render start
+            if (graphDiv._fullLayout?.scene?.camera) currentCamera = graphDiv._fullLayout.scene.camera;
 
             // Calculate Target Resolution
             let renderW = originalW * sliderMultiplier;
@@ -1610,11 +1618,6 @@
 
                 // Toggle Logic
                 document.getElementById('theme-btn').addEventListener('click', () => {
-                    // Force sync camera state from internal renderer to prevent mobile snap-back
-                    if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
-                        currentCamera = graphDiv._fullLayout.scene.camera;
-                    }
-
                     isLightMode = !isLightMode;
                     const btn = document.getElementById('theme-btn');
                     if(isLightMode) {
@@ -1884,6 +1887,7 @@
                     };
 
                     currentCamera = newCamera;
+                    // Use standard relayout for animation
                     Plotly.relayout('chart-container', { 'scene.camera': newCamera });
                 }
 
