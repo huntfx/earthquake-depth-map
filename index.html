@@ -220,7 +220,7 @@
         }
         #load-btn:hover, #render-btn:hover { background: #ccffff; }
 
-        #chart-container { height: 100vh; width: 100%; }
+        #chart-container { height: 100vh; width: 100%; touch-action: none; }
 
         #info-overlay {
             position: absolute; bottom: 15px; left: 15px;
@@ -433,7 +433,7 @@
         <a href="#" target="_blank" id="qi-link">View on USGS ↗</a>
     </div>
 
-    <button id="menu-btn">☰ Settings</button>
+    <button id="menu-btn">☰ Config</button>
 
     <div id="side-panel">
         <button id="close-btn">×</button>
@@ -1610,6 +1610,11 @@
 
                 // Toggle Logic
                 document.getElementById('theme-btn').addEventListener('click', () => {
+                    // Force sync camera state from internal renderer to prevent mobile snap-back
+                    if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
+                        currentCamera = graphDiv._fullLayout.scene.camera;
+                    }
+
                     isLightMode = !isLightMode;
                     const btn = document.getElementById('theme-btn');
                     if(isLightMode) {
