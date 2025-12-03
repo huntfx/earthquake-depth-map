@@ -596,7 +596,11 @@
         const BORDERS_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
         const PLATES_URL = "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json";
 
-        const BORDER_WIDTHS = [0, 1, 2, 4, 8, 16];
+        // --- Configuration Constants ---
+        // These are the single source of truth for widths. Change them here to update everywhere.
+        const BASE_BORDER_WIDTH = 3;
+        const BASE_PLATE_WIDTH = 4;
+
         const ROTATION_SPEED = -0.001;
 
         // --- State ---
@@ -1040,9 +1044,8 @@
             loading.style.display = 'block';
             loading.style.color = ''; // Reset to default (CSS handles it)
 
-            // Store original props for cleanup
-            const originalBorderWidth = isLightMode ? 4 : 1; // Default width before scaling logic override below
-            const originalPlateWidth = isLightMode ? 4 : 2;
+            // Store original props for cleanup (using unified widths)
+            // UPDATED: Now using global constants
             const originalLabelSize = document.getElementById('labels-checkbox').checked ? 12 : 0;
 
             // --- SETUP PHASE: Scale & Hide UI ---
@@ -1050,8 +1053,8 @@
             const visualMultiplier = Math.min(effectiveMultiplier, 1.6);
 
             const scaledMarkerSizes = calculateScaledSizes(visualMultiplier);
-            const scaledBorderWidth = (isLightMode ? 2 : 1) * visualMultiplier; // Override with new light mode widths
-            const scaledPlateWidth = (isLightMode ? 3 : 2) * visualMultiplier;
+            const scaledBorderWidth = BASE_BORDER_WIDTH * visualMultiplier;
+            const scaledPlateWidth = BASE_PLATE_WIDTH * visualMultiplier;
             const scaledLabelSize = originalLabelSize * visualMultiplier;
 
             // Apply Styling Override
@@ -1164,8 +1167,8 @@
                     'marker.size': [normalSizes]
                 }, [4]);
 
-                 await Plotly.restyle(graphDiv, { 'line.width': isLightMode ? 2 : 1 }, [1]);
-                 await Plotly.restyle(graphDiv, { 'line.width': isLightMode ? 3 : 2 }, [2]);
+                 await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH }, [1]);
+                 await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH }, [2]);
                  await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [3]);
 
                 setTimeout(() => { loading.style.display = 'none'; loading.innerText = "Initializing..."; }, 2000);
@@ -1183,8 +1186,8 @@
                  // Try to restore on error too
                  const normalSizes = calculateScaledSizes(1.0);
                  await Plotly.restyle(graphDiv, { 'marker.showscale': true, 'marker.size': [normalSizes] }, [4]);
-                 await Plotly.restyle(graphDiv, { 'line.width': isLightMode ? 2 : 1 }, [1]);
-                 await Plotly.restyle(graphDiv, { 'line.width': isLightMode ? 3 : 2 }, [2]);
+                 await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH }, [1]);
+                 await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH }, [2]);
                  await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [3]);
             }
         }
@@ -1379,16 +1382,19 @@
             // Use dark grey for borders in light mode for better contrast
             const bgColor = isLightMode ? '#f0f0f0' : 'black';
             const gridColor = isLightMode ? '#ccc' : '#333';
-            const borderColor = isLightMode ? '#666' : '#00ffff';
+
+            // Modified: Darker Teal for Dark Mode borders, Grey for Light Mode
+            const borderColor = isLightMode ? '#666' : '#008888';
 
             // Lighter blue for plates in light mode to distinguish from grey borders
-            const plateColor = isLightMode ? '#2288cc' : '#1E90FF';
+            const plateColor = isLightMode ? '#2288cc' : '#1565C0';
 
             const labelColor = isLightMode ? 'rgba(0, 0, 0, 0.7)' : 'rgba(180, 180, 180, 0.9)';
 
-            // Thicker borders in Light Mode for visibility
-            const borderWidth = bordersEnabled ? (isLightMode ? 2 : 1) : 0;
-            const plateWidth = platesEnabled ? (isLightMode ? 3 : 2) : 0;
+            // Modified: Constant thick widths for both modes (2px borders, 3px plates)
+            // UPDATED: Now using global constants
+            const borderWidth = bordersEnabled ? BASE_BORDER_WIDTH : 0;
+            const plateWidth = platesEnabled ? BASE_PLATE_WIDTH : 0;
 
             const selectedPalette = document.getElementById('color-select').value;
             const colorMode = document.getElementById('color-mode').value;
