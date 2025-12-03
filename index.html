@@ -562,6 +562,11 @@
             <input type="checkbox" id="plates-checkbox" checked>
         </div>
 
+        <div class="checkbox-group">
+            <label for="surface-lines-checkbox">Surface Lines</label>
+            <input type="checkbox" id="surface-lines-checkbox">
+        </div>
+
         <h3>Render Frames</h3>
         <div class="control-group">
             <label>Filename & Format</label>
@@ -1376,6 +1381,7 @@
             const bordersEnabled = document.getElementById('borders-checkbox').checked;
             const platesEnabled = document.getElementById('plates-checkbox').checked;
             const showLabels = document.getElementById('labels-checkbox').checked;
+            const showSurfaceLines = document.getElementById('surface-lines-checkbox').checked;
             const labelSize = showLabels ? 12 : 0;
 
             // Light Mode check
@@ -1401,6 +1407,9 @@
 
             const qx = [], qy = [], qz = [], ghostSizes = [], colors = [], texts = [];
             const customData = []; // To store full object references for click events
+            // Arrays for surface lines
+            const slx = [], sly = [], slz = [];
+            const lineColors = []; // Array for line colors
 
             // Use shared helper for consistency, multiplier 1 for standard view
             const sizes = calculateScaledSizes(1.0);
@@ -1417,9 +1426,12 @@
                 // Add full object to custom data
                 customData.push(q);
 
-                if (colorMode === 'depth') colors.push(q.depth);
-                else if (colorMode === 'mag') colors.push(q.mag);
-                else colors.push(q.time);
+                let val;
+                if (colorMode === 'depth') val = q.depth;
+                else if (colorMode === 'mag') val = q.mag;
+                else val = q.time;
+
+                colors.push(val);
 
                 const d = new Date(q.time);
                 const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -1429,6 +1441,22 @@
                     `Magnitude: ${q.realMag.toFixed(2)}<br>` +
                     `Depth: ${q.depth.toFixed(2)}km`
                 );
+
+                // Build Surface Lines
+                if (showSurfaceLines) {
+                     const [sx, sy, sz] = latLonToXYZ(q.lat, q.lon, EARTH_RADIUS);
+                     // Line from Surface (sx, sy, sz) to Quake (x, y, z)
+                     slx.push(sx); sly.push(sy); slz.push(sz);
+                     slx.push(x);  sly.push(y);  slz.push(z);
+                     // Add breaks to disconnect lines
+                     slx.push(null); sly.push(null); slz.push(null);
+
+                     // Push color values for both vertices and the break
+                     lineColors.push(val);
+                     lineColors.push(val);
+                     lineColors.push(val);
+                }
+
                 i++;
             }
 
@@ -1473,6 +1501,23 @@
                 x: staticPlateArrays.x, y: staticPlateArrays.y, z: staticPlateArrays.z,
                 line: { color: plateColor, width: plateWidth }, opacity: 0.8, hoverinfo: 'skip',
                 visible: plateWidth > 0
+            };
+
+            const surfaceLineTrace = {
+                type: 'scatter3d',
+                mode: 'lines',
+                x: slx, y: sly, z: slz,
+                line: {
+                    color: lineColors,              // Array of colors
+                    colorscale: selectedPalette,    // Match marker scale
+                    cmin: colorSettings.cmin,
+                    cmax: colorSettings.cmax,
+                    width: 2,
+                    showscale: false                // Hide duplicate colorbar
+                },
+                opacity: 0.3,
+                hoverinfo: 'skip',
+                visible: showSurfaceLines
             };
 
             // New Country Labels Trace
@@ -1532,7 +1577,7 @@
             }
             layout.scene.camera = currentCamera;
 
-            Plotly.react('chart-container', [gridTrace, borderTrace, plateTrace, labelTrace, quakeTrace, ghostTrace], layout, {responsive: true});
+            Plotly.react('chart-container', [gridTrace, borderTrace, plateTrace, labelTrace, surfaceLineTrace, quakeTrace, ghostTrace], layout, {responsive: true});
         }
 
         // --- Main App Logic ---
@@ -1557,6 +1602,7 @@
                 document.getElementById('borders-checkbox').checked = true;
                 document.getElementById('plates-checkbox').checked = true;
                 document.getElementById('labels-checkbox').checked = false;
+                document.getElementById('surface-lines-checkbox').checked = false;
 
                 updateLabels();
 
@@ -1613,6 +1659,7 @@
                 document.getElementById('labels-checkbox').addEventListener('change', () => updatePlot());
                 document.getElementById('borders-checkbox').addEventListener('change', () => updatePlot());
                 document.getElementById('plates-checkbox').addEventListener('change', () => updatePlot());
+                document.getElementById('surface-lines-checkbox').addEventListener('change', () => updatePlot());
 
                 // Toggle Logic
                 document.getElementById('theme-btn').addEventListener('click', () => {
