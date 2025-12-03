@@ -273,6 +273,16 @@
         }
         #quake-info-close:hover { color: white; }
 
+        /* SIMULATE BUTTON */
+        #qi-sim-btn {
+            display: block; width: 100%; margin-top: 8px;
+            background: transparent; color: cyan;
+            border: 1px solid cyan; border-radius: 3px;
+            padding: 8px; text-transform: uppercase; font-weight: bold; font-size: 11px;
+            cursor: pointer; transition: all 0.2s;
+        }
+        #qi-sim-btn:hover { background: rgba(0, 255, 255, 0.1); }
+
         /* --- LIGHT MODE OVERRIDES --- */
         body.light-mode {
             background-color: #f0f0f0; /* Off-white background */
@@ -399,6 +409,12 @@
         body.light-mode #close-btn:hover {
             color: #333;
         }
+        body.light-mode #qi-sim-btn {
+            color: #008080; border-color: #008080;
+        }
+        body.light-mode #qi-sim-btn:hover {
+            background: rgba(0, 128, 128, 0.1);
+        }
         /* Loading Overlay Light Mode */
         body.light-mode #loading {
             background: rgba(255, 255, 255, 0.95);
@@ -431,6 +447,7 @@
         <p><strong id="qi-label-1">Magnitude:</strong> <span id="qi-val-1"></span></p>
         <p><strong id="qi-label-2">Depth:</strong> <span id="qi-val-2"></span></p>
         <p><strong id="qi-label-3">Time:</strong> <span id="qi-val-3"></span></p>
+        <button id="qi-sim-btn">Simulate Wave</button>
         <a href="#" target="_blank" id="qi-link">View on USGS ↗</a>
     </div>
 
@@ -630,6 +647,9 @@
         let rawVolcanoData = [];
         let stats = { maxMag: 0, maxDepth: 0, minTime: 0, maxTime: 0, avgMag: 0 };
 
+        let pulseState = null; // Stores pulse animation state
+        let selectedQuake = null; // Current selected object for simulation
+
         let staticBorderArrays = { x: [], y: [], z: [] };
         let staticLabelArrays = { x: [], y: [], z: [], text: [] };
         let staticPlateArrays = { x: [], y: [], z: [] };
@@ -798,6 +818,7 @@
             }
 
             if (found) {
+
                 // Center camera on volcano
                 const lat = found.lat;
                 const lon = found.lon;
@@ -834,9 +855,6 @@
 
                 currentCamera = newCameraSettings;
                 Plotly.relayout('chart-container', { 'scene.camera': newCameraSettings });
-
-                // Trigger update to show the marker
-                updatePlot();
 
                 autoRotate = false;
                 document.getElementById('rotate-btn').innerHTML = '▶';
@@ -1432,30 +1450,88 @@
             }
         }
 
+        // Helper function to generate circle points on sphere
+        function getCirclePoints(lat, lon, radiusKm) {
+            const points = { x: [], y: [], z: [] };
+            const angularDistance = radiusKm / EARTH_RADIUS; // radians
+
+            const latRad = lat * Math.PI / 180;
+            const lonRad = lon * Math.PI / 180;
+
+            const sinLat = Math.sin(latRad);
+            const cosLat = Math.cos(latRad);
+
+            // Generate 64 points for the circle
+            for (let i = 0; i <= 64; i++) {
+                const bearing = (i / 64) * 2 * Math.PI;
+                const sinBearing = Math.sin(bearing);
+                const cosBearing = Math.cos(bearing);
+
+                const sinLat2 = sinLat * Math.cos(angularDistance) + cosLat * Math.sin(angularDistance) * cosBearing;
+                const lat2 = Math.asin(sinLat2);
+
+                const y = sinBearing * Math.sin(angularDistance) * cosLat;
+                const x = Math.cos(angularDistance) - sinLat * sinLat2;
+                const lon2 = lonRad + Math.atan2(y, x);
+
+                // Convert back to Cartesian
+                // Using EARTH_RADIUS + small offset to prevent z-fighting
+                const R = EARTH_RADIUS + 20; // Increased to 20 to prevent z-fighting
+                points.x.push(R * Math.cos(lat2) * Math.cos(lon2));
+                points.y.push(R * Math.cos(lat2) * Math.sin(lon2));
+                points.z.push(R * Math.sin(lat2));
+            }
+
+            return points;
+        }
+
+        // Helper: Trigger the pulse animation given a quake object
+        function triggerPulse(q) {
+            if (!q) return;
+
+            let animMaxRadius = 500; // default km
+
+            if (q.type === 'volcano') {
+                animMaxRadius = 100; // Small ping for volcanoes
+            } else {
+                // Calculate Felt Radius based on Magnitude
+                // Exponential scale: roughly M4=140km, M5=280km, M7=1000km, M9=4000km
+                // Ensure visible minimum for small quakes
+                // REMOVED CLAMP AS REQUESTED
+                animMaxRadius = Math.exp(q.realMag / 1.5) * 20;
+            }
+
+            // Initialize Pulse Animation State
+            // Store origin LAT/LON to calculate the circle correctly on sphere surface
+            pulseState = {
+                startTime: performance.now(),
+                lat: q.lat,
+                lon: q.lon,
+                maxRadius: animMaxRadius
+            };
+        }
+
         function animateGlobe() {
             const graphDiv = document.getElementById('chart-container');
             const scene = graphDiv._fullLayout ? graphDiv._fullLayout.scene : null;
 
+            // Handle Camera Rotation
             if (scene && scene.camera && autoRotate) {
                 const cos = Math.cos(ROTATION_SPEED);
                 const sin = Math.sin(ROTATION_SPEED);
 
                 const currentEye = currentCamera.eye;
-                // Fix: Ensure center has coordinates. If {} or null, use default.
                 let currentCenter = currentCamera.center;
                 if (!currentCenter || typeof currentCenter.x === 'undefined') {
                     currentCenter = {x: 0, y: 0, z: 0};
                 }
 
-                // Calculate vector relative to the center of rotation (the focus point)
                 const dx = currentEye.x - currentCenter.x;
                 const dy = currentEye.y - currentCenter.y;
 
-                // Rotate the relative vector
                 const newDx = dx * cos - dy * sin;
                 const newDy = dx * sin + dy * cos;
 
-                // Apply back to absolute coordinates
                 const newEye = {
                     x: currentCenter.x + newDx,
                     y: currentCenter.y + newDy,
@@ -1468,6 +1544,52 @@
                     'scene.camera.eye': newEye
                 });
             }
+
+            // Handle Active Pulse Animation
+            if (pulseState) {
+                const now = performance.now();
+                // Physics Speed: km per second
+                const speed = 300; // Reduced to 300 as requested
+
+                // Elapsed time in seconds
+                const elapsedSeconds = (now - pulseState.startTime) / 1000;
+
+                // Current radius in km
+                // REMOVED CLAMP AS REQUESTED: starts from 0
+                const currentRadius = elapsedSeconds * speed;
+
+                // Calculate progress (0 to 1)
+                // REMOVED CLAMP AS REQUESTED
+                const progress = currentRadius / pulseState.maxRadius;
+
+                if (progress < 1) {
+                    // Generate circle
+                    const circle = getCirclePoints(pulseState.lat, pulseState.lon, currentRadius);
+
+                    // Fade out
+                    // Use a slightly gentler fade so it stays visible longer
+                    const opacity = 1 - Math.pow(progress, 1.5);
+                    // Fade the width too (Simulates thinning/dissipating wave)
+                    const width = 5 * opacity;
+
+                    // RGBA Color String for proper opacity handling
+                    const colorString = `rgba(255, 255, 255, ${opacity.toFixed(2)})`;
+
+                    Plotly.restyle('chart-container', {
+                        'x': [circle.x],
+                        'y': [circle.y],
+                        'z': [circle.z],
+                        'line.color': colorString,
+                        'line.width': [width],
+                        'visible': true
+                    }, [9]);
+                } else {
+                    // Animation Complete - Ensure it's fully transparent/hidden
+                    Plotly.restyle('chart-container', {'visible': false}, [9]);
+                    pulseState = null;
+                }
+            }
+
             requestAnimationFrame(animateGlobe);
         }
 
@@ -1766,6 +1888,20 @@
                 marker: { size: ghostSizes, color: 'rgba(0,0,0,0)', opacity: 0.0 }
             };
 
+            // Trace 9: Pulse Animation (Initially Empty)
+            // Changed from 'markers' (slow symbol scaling) to 'lines' (fast ring geometry)
+            const pulseTrace = {
+                type: 'scatter3d',
+                mode: 'lines',
+                x: [], y: [], z: [],
+                hoverinfo: 'none',
+                line: {
+                    width: 5,
+                    color: 'white'
+                },
+                opacity: 1
+            };
+
             const layout = {
                 paper_bgcolor: bgColor,
                 plot_bgcolor: bgColor,
@@ -1786,7 +1922,12 @@
             }
             layout.scene.camera = currentCamera;
 
-            Plotly.react('chart-container', [gridTrace, borderTrace, plateTrace, labelTrace, volcanoTrace, surfaceLineTrace, volcanoLineTrace, quakeTrace, ghostTrace], layout, {responsive: true});
+            // Updated Trace Order - pulseTrace is Trace 9
+            Plotly.react('chart-container', [
+                gridTrace, borderTrace, plateTrace, labelTrace,
+                volcanoTrace, surfaceLineTrace, volcanoLineTrace,
+                quakeTrace, ghostTrace, pulseTrace
+            ], layout, {responsive: true});
         }
 
         // --- Main App Logic ---
@@ -1912,6 +2053,8 @@
 
                 // Reset View
                 document.getElementById('reset-btn').addEventListener('click', () => {
+                    // Clear search
+                    searchMarker = null;
                     const defaultCam = calculateResponsiveCamera();
                     currentCamera = defaultCam;
                     Plotly.relayout('chart-container', { 'scene.camera': defaultCam });
@@ -2048,6 +2191,17 @@
                     }
                 });
 
+                // Simulate Button
+                document.getElementById('qi-sim-btn').addEventListener('click', () => {
+                    if (selectedQuake) {
+                        // SYNC CAMERA HERE
+                        if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
+                            currentCamera = graphDiv._fullLayout.scene.camera;
+                        }
+                        triggerPulse(selectedQuake);
+                    }
+                });
+
                 // Search Listeners (Zones)
                 document.getElementById('zone-btn').addEventListener('click', searchZone);
                 document.getElementById('zone-input').addEventListener('keypress', (e) => {
@@ -2148,6 +2302,9 @@
                 function executeFlyTo(q) {
                     if (!q) return;
 
+                    // Store global selection
+                    selectedQuake = q;
+
                     // Update Popup Content
                     document.getElementById('qi-place').innerText = q.name || q.place;
 
@@ -2158,6 +2315,7 @@
                     const label3 = document.getElementById('qi-label-3');
                     const val3 = document.getElementById('qi-val-3');
                     const link = document.getElementById('qi-link');
+                    const simBtn = document.getElementById('qi-sim-btn');
 
                     if (q.type === 'volcano') {
                         label1.innerText = "Type:";
@@ -2170,6 +2328,7 @@
                         val3.innerText = q.status;
 
                         link.style.display = 'none';
+                        simBtn.style.display = 'none'; // No wave simulation for volcanoes
                     } else {
                         label1.innerText = "Magnitude:";
                         val1.innerText = q.realMag.toFixed(2);
@@ -2186,9 +2345,13 @@
                         } else {
                             link.style.display = 'none';
                         }
+                        simBtn.style.display = 'block'; // Enable for quakes
                     }
 
                     document.getElementById('quake-info').style.display = 'block';
+
+                    // Trigger the animation first
+                    // triggerPulse(q); // DISABLED CLICK TRIGGER
 
                     // Fly Camera
                     const PLOT_SCALE = 3000 / EARTH_RADIUS;
@@ -2221,20 +2384,32 @@
                     Plotly.relayout('chart-container', { 'scene.camera': newCamera });
                 }
 
+                // Helper: Trigger the pulse animation given a quake object
+                function triggerPulse(q) {
+                    if (!q || q.type === 'volcano') return;
+
+                    // Calculate Felt Radius based on Magnitude
+                    // Exponential scale: roughly M4=140km, M5=280km, M7=1000km, M9=4000km
+                    // Ensure visible minimum for small quakes
+                    const animMaxRadius = Math.max(500, Math.exp(q.realMag / 1.5) * 20);
+
+                    // Initialize Pulse Animation State
+                    // Store origin LAT/LON to calculate the circle correctly on sphere surface
+                    pulseState = {
+                        startTime: performance.now(),
+                        lat: q.lat,
+                        lon: q.lon,
+                        maxRadius: animMaxRadius
+                    };
+                }
+
                 // --- EVENT BASED CAMERA TRACKING (No polling) ---
                 graphDiv.on('plotly_relayout', (eventData) => {
                     if (eventData['scene.camera']) {
                         currentCamera = eventData['scene.camera'];
                     }
                     else {
-                        if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
-                            const cam = graphDiv._fullLayout.scene.camera;
-                            currentCamera = {
-                                eye: { ...cam.eye },
-                                center: { ...cam.center },
-                                up: { ...cam.up }
-                            };
-                        }
+                       // Standard fallback, don't aggressively sync fullLayout here
                     }
                 });
 
