@@ -427,9 +427,10 @@
     <div id="quake-info">
         <div id="quake-info-close" onclick="document.getElementById('quake-info').style.display='none'">×</div>
         <h3 id="qi-place">Location</h3>
-        <p><strong>Magnitude:</strong> <span id="qi-mag"></span></p>
-        <p><strong>Depth:</strong> <span id="qi-depth"></span> km</p>
-        <p><strong>Time:</strong> <span id="qi-time"></span></p>
+        <!-- The content inside these p tags is dynamically updated -->
+        <p><strong id="qi-label-1">Magnitude:</strong> <span id="qi-val-1"></span></p>
+        <p><strong id="qi-label-2">Depth:</strong> <span id="qi-val-2"></span></p>
+        <p><strong id="qi-label-3">Time:</strong> <span id="qi-val-3"></span></p>
         <a href="#" target="_blank" id="qi-link">View on USGS ↗</a>
     </div>
 
@@ -441,11 +442,21 @@
 
         <!-- Search Feature -->
         <div class="control-group">
-            <label>Search Location</label>
+            <label>Search Country</label>
             <div class="search-container">
                 <input type="text" id="search-input" placeholder="e.g. Japan, Chile" list="locations-list">
                 <datalist id="locations-list"></datalist>
                 <button id="search-btn" class="search-btn" disabled>Go</button>
+            </div>
+        </div>
+
+        <!-- Search Volcanoes -->
+        <div class="control-group">
+            <label>Search Volcano</label>
+            <div class="search-container">
+                <input type="text" id="volc-search-input" placeholder="e.g. Fuji, Etna" list="volcanoes-list">
+                <datalist id="volcanoes-list"></datalist>
+                <button id="volc-search-btn" class="search-btn" disabled>Go</button>
             </div>
         </div>
 
@@ -563,6 +574,11 @@
         </div>
 
         <div class="checkbox-group">
+            <label for="volcanoes-checkbox">Volcanoes</label>
+            <input type="checkbox" id="volcanoes-checkbox">
+        </div>
+
+        <div class="checkbox-group">
             <label for="surface-lines-checkbox">Surface Lines</label>
             <input type="checkbox" id="surface-lines-checkbox">
         </div>
@@ -600,6 +616,7 @@
         const USGS_BASE_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&orderby=magnitude";
         const BORDERS_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
         const PLATES_URL = "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json";
+        const VOLCANOES_URL = "https://raw.githubusercontent.com/plotly/datasets/master/volcano_db.csv";
 
         // --- Configuration Constants ---
         // These are the single source of truth for widths. Change them here to update everywhere.
@@ -610,6 +627,7 @@
 
         // --- State ---
         let rawQuakeData = [];
+        let rawVolcanoData = [];
         let stats = { maxMag: 0, maxDepth: 0, minTime: 0, maxTime: 0, avgMag: 0 };
 
         let staticBorderArrays = { x: [], y: [], z: [] };
@@ -754,6 +772,78 @@
                 // Clear input and disable button (No visual text feedback)
                 input.value = "";
                 btn.disabled = true;
+
+                // Update plot to clear any old markers
+                updatePlot();
+            }
+        }
+
+        function searchVolcano() {
+            // Close info popup if open
+            document.getElementById('quake-info').style.display = 'none';
+
+            const input = document.getElementById('volc-search-input');
+            const btn = document.getElementById('volc-search-btn');
+            const query = input.value.trim().toLowerCase();
+
+            if (!query) return;
+
+            // Find best match in rawVolcanoData
+            // First try exact match
+            let found = rawVolcanoData.find(v => v.name.toLowerCase() === query);
+
+            if (!found) {
+                // Try partial match
+                found = rawVolcanoData.find(v => v.name.toLowerCase().includes(query));
+            }
+
+            if (found) {
+                // Center camera on volcano
+                const lat = found.lat;
+                const lon = found.lon;
+
+                // Calculate normalized vector
+                const latRad = lat * Math.PI / 180;
+                const lonRad = lon * Math.PI / 180;
+
+                const nx = Math.cos(latRad) * Math.cos(lonRad);
+                const ny = Math.cos(latRad) * Math.sin(lonRad);
+                const nz = Math.sin(latRad);
+
+                const PLOT_SCALE = 3000 / EARTH_RADIUS;
+                const [tx, ty, tz] = latLonToXYZ(lat, lon, EARTH_RADIUS);
+                const scx = (tx / EARTH_RADIUS) * PLOT_SCALE;
+                const scy = (ty / EARTH_RADIUS) * PLOT_SCALE;
+                const scz = (tz / EARTH_RADIUS) * PLOT_SCALE;
+
+                const newCenter = { x: scx, y: scy, z: scz };
+
+                const currentDist = Math.sqrt(currentCamera.eye.x**2 + currentCamera.eye.y**2 + currentCamera.eye.z**2);
+
+                const newEye = {
+                    x: nx * currentDist,
+                    y: ny * currentDist,
+                    z: nz * currentDist
+                };
+
+                const newCameraSettings = {
+                    eye: newEye,
+                    center: newCenter,
+                    up: { x: 0, y: 0, z: 1 }
+                };
+
+                currentCamera = newCameraSettings;
+                Plotly.relayout('chart-container', { 'scene.camera': newCameraSettings });
+
+                // Trigger update to show the marker
+                updatePlot();
+
+                autoRotate = false;
+                document.getElementById('rotate-btn').innerHTML = '▶';
+
+                // Provide visual feedback
+                input.value = "";
+                btn.disabled = true;
             }
         }
 
@@ -819,6 +909,8 @@
                 // Clear input and disable button (No visual text feedback)
                 input.value = "";
                 btn.disabled = true;
+
+                updatePlot();
             }
         }
 
@@ -960,6 +1052,41 @@
                 });
             });
             return { x: px, y: py, z: pz };
+        }
+
+        function processVolcanoes(csvText) {
+            const data = [];
+            const lines = csvText.split('\n');
+            // Header is: Number,Volcano Name,Country,Region,Latitude,Longitude,Elevation (m),Type,Status,Last Known Eruption
+            // We start at index 1 to skip header
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+
+                // Simple CSV split (handling simple commas)
+                // Note: This specific dataset has simple fields usually, but regex is safer for quoted fields
+                const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+
+                if (cols.length < 7) continue;
+
+                // Remove quotes if present
+                const clean = (str) => str ? str.replace(/^"|"$/g, '') : '';
+
+                const name = clean(cols[1]);
+                const lat = parseFloat(cols[4]);
+                const lon = parseFloat(cols[5]);
+                // Parse Elev as float
+                let elev = parseFloat(clean(cols[6]));
+                if(isNaN(elev)) elev = 0;
+
+                const type = clean(cols[7]);
+                const status = clean(cols[8]);
+
+                if (isNaN(lat) || isNaN(lon)) continue;
+
+                data.push({ name, lat, lon, elev, type, status });
+            }
+            return data;
         }
 
         function generateWireframeGrid() {
@@ -1268,7 +1395,8 @@
                         realMag: realMag,
                         time: time,
                         place: f.properties.place || "Unknown",
-                        url: f.properties.url
+                        url: f.properties.url,
+                        type: 'quake'
                     };
                 });
 
@@ -1376,10 +1504,12 @@
 
         function updatePlot(isInitial = false) {
             const depthScale = parseFloat(document.getElementById('depth-slider').value);
+            const baseSize = parseFloat(document.getElementById('size-slider').value);
 
             // Checkbox logic replacing slider logic
             const bordersEnabled = document.getElementById('borders-checkbox').checked;
             const platesEnabled = document.getElementById('plates-checkbox').checked;
+            const volcanoesEnabled = document.getElementById('volcanoes-checkbox').checked;
             const showLabels = document.getElementById('labels-checkbox').checked;
             const showSurfaceLines = document.getElementById('surface-lines-checkbox').checked;
             const labelSize = showLabels ? 12 : 0;
@@ -1397,6 +1527,10 @@
 
             const labelColor = isLightMode ? 'rgba(0, 0, 0, 0.7)' : 'rgba(180, 180, 180, 0.9)';
 
+            // Volcano styling based on Light Mode
+            const volcColor = isLightMode ? 'white' : 'black';
+            const volcLine = isLightMode ? 'black' : 'white';
+
             // Modified: Constant thick widths for both modes (2px borders, 3px plates)
             // UPDATED: Now using global constants
             const borderWidth = bordersEnabled ? BASE_BORDER_WIDTH : 0;
@@ -1410,6 +1544,9 @@
             // Arrays for surface lines
             const slx = [], sly = [], slz = [];
             const lineColors = []; // Array for line colors
+
+            // Volcano lines
+            const vlx = [], vly = [], vlz = [];
 
             // Use shared helper for consistency, multiplier 1 for standard view
             const sizes = calculateScaledSizes(1.0);
@@ -1442,7 +1579,7 @@
                     `Depth: ${q.depth.toFixed(2)}km`
                 );
 
-                // Build Surface Lines
+                // Build Surface Lines (Earthquakes)
                 if (showSurfaceLines) {
                      const [sx, sy, sz] = latLonToXYZ(q.lat, q.lon, EARTH_RADIUS);
                      // Line from Surface (sx, sy, sz) to Quake (x, y, z)
@@ -1503,17 +1640,89 @@
                 visible: plateWidth > 0
             };
 
+            // Prepare Volcano Trace
+            const vx = [], vy = [], vz = [], vtext = [], vCustom = [];
+
+            // Loop data if enabled OR if lines are needed
+            if (volcanoesEnabled || (showSurfaceLines && volcanoesEnabled)) {
+                rawVolcanoData.forEach(v => {
+                    // Position Logic: Earth Radius + (Elev_km * depthScale)
+                    // Convert meters to km first
+                    const r_volc = EARTH_RADIUS + ((v.elev / 1000) * depthScale);
+                    const [x, y, z] = latLonToXYZ(v.lat, v.lon, r_volc);
+
+                    if (volcanoesEnabled) {
+                        vx.push(x); vy.push(y); vz.push(z);
+                        vtext.push(
+                            `<b>${v.name}</b><br>` +
+                            `Type: ${v.type}<br>` +
+                            `Elevation: ${v.elev}m`
+                        );
+                        vCustom.push({
+                            type: 'volcano',
+                            name: v.name,
+                            lat: v.lat,
+                            lon: v.lon,
+                            elev: v.elev,
+                            volcType: v.type,
+                            status: v.status
+                        });
+                    }
+
+                    // Volcano Surface Lines Logic
+                    if (showSurfaceLines && volcanoesEnabled) {
+                        // Surface point
+                        const [sx, sy, sz] = latLonToXYZ(v.lat, v.lon, EARTH_RADIUS);
+
+                        vlx.push(sx); vly.push(sy); vlz.push(sz);
+                        vlx.push(x);  vly.push(y);  vlz.push(z);
+                        vlx.push(null); vly.push(null); vlz.push(null);
+                    }
+                });
+            }
+
+            const volcanoTrace = {
+                type: 'scatter3d',
+                mode: 'markers',
+                x: vx, y: vy, z: vz,
+                text: vtext,
+                hoverinfo: 'text',
+                customdata: vCustom,
+                marker: {
+                    symbol: 'cross',
+                    size: baseSize * 2.0,
+                    color: volcColor,
+                    line: { color: volcLine, width: 1.5 },
+                    opacity: 1.0
+                },
+                visible: volcanoesEnabled
+            };
+
+            // Distinct Trace for Volcano Surface Lines (Fixed Color)
+            const volcanoLineTrace = {
+                type: 'scatter3d',
+                mode: 'lines',
+                x: vlx, y: vly, z: vlz,
+                line: {
+                    color: isLightMode ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)',
+                    width: 2
+                },
+                opacity: 0.5,
+                hoverinfo: 'skip',
+                visible: showSurfaceLines && volcanoesEnabled
+            };
+
             const surfaceLineTrace = {
                 type: 'scatter3d',
                 mode: 'lines',
                 x: slx, y: sly, z: slz,
                 line: {
-                    color: lineColors,              // Array of colors
-                    colorscale: selectedPalette,    // Match marker scale
+                    color: lineColors,
+                    colorscale: selectedPalette,
                     cmin: colorSettings.cmin,
                     cmax: colorSettings.cmax,
                     width: 2,
-                    showscale: false                // Hide duplicate colorbar
+                    showscale: false
                 },
                 opacity: 0.3,
                 hoverinfo: 'skip',
@@ -1577,7 +1786,7 @@
             }
             layout.scene.camera = currentCamera;
 
-            Plotly.react('chart-container', [gridTrace, borderTrace, plateTrace, labelTrace, surfaceLineTrace, quakeTrace, ghostTrace], layout, {responsive: true});
+            Plotly.react('chart-container', [gridTrace, borderTrace, plateTrace, labelTrace, volcanoTrace, surfaceLineTrace, volcanoLineTrace, quakeTrace, ghostTrace], layout, {responsive: true});
         }
 
         // --- Main App Logic ---
@@ -1602,6 +1811,7 @@
                 document.getElementById('borders-checkbox').checked = true;
                 document.getElementById('plates-checkbox').checked = true;
                 document.getElementById('labels-checkbox').checked = false;
+                document.getElementById('volcanoes-checkbox').checked = false;
                 document.getElementById('surface-lines-checkbox').checked = false;
 
                 updateLabels();
@@ -1609,17 +1819,24 @@
                 console.log("Downloading static map data...");
                 document.getElementById('loading').innerText = "Loading Map Data...";
 
-                const [borderRes, platesRes] = await Promise.all([
+                // Fetch Borders, Plates, AND Volcanoes
+                const [borderRes, platesRes, volcanoRes] = await Promise.all([
                     fetch(BORDERS_URL),
-                    fetch(PLATES_URL)
+                    fetch(PLATES_URL),
+                    fetch(VOLCANOES_URL)
                 ]);
 
                 const borderJson = await borderRes.json();
                 const platesJson = await platesRes.json();
+                const volcanoCsv = await volcanoRes.text();
 
                 const processedBorders = processBorders(borderJson);
                 staticBorderArrays = processedBorders.borders;
                 staticLabelArrays = processedBorders.labels;
+
+                // Process Volcanoes
+                rawVolcanoData = processVolcanoes(volcanoCsv);
+                console.log(`Loaded ${rawVolcanoData.length} volcanoes.`);
 
                 // Populate Autocomplete (Countries)
                 const dataList = document.getElementById('locations-list');
@@ -1628,6 +1845,16 @@
                     const option = document.createElement('option');
                     option.value = name;
                     dataList.appendChild(option);
+                });
+
+                // Populate Autocomplete (Volcanoes)
+                const volcList = document.getElementById('volcanoes-list');
+                // Use a Set to avoid duplicates if any
+                const uniqueVolcNames = [...new Set(rawVolcanoData.map(v => v.name))].sort();
+                uniqueVolcNames.forEach(name => {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    volcList.appendChild(option);
                 });
 
                 // Populate Autocomplete (Zones)
@@ -1659,6 +1886,7 @@
                 document.getElementById('labels-checkbox').addEventListener('change', () => updatePlot());
                 document.getElementById('borders-checkbox').addEventListener('change', () => updatePlot());
                 document.getElementById('plates-checkbox').addEventListener('change', () => updatePlot());
+                document.getElementById('volcanoes-checkbox').addEventListener('change', () => updatePlot());
                 document.getElementById('surface-lines-checkbox').addEventListener('change', () => updatePlot());
 
                 // Toggle Logic
@@ -1691,6 +1919,7 @@
                     // Auto-play on reset
                     autoRotate = true;
                     document.getElementById('rotate-btn').innerHTML = '❚❚';
+                    updatePlot(); // Clear marker
                 });
 
                 // Render frames
@@ -1797,6 +2026,28 @@
                     }
                 });
 
+                // Search Listeners (Volcanoes)
+                document.getElementById('volc-search-btn').addEventListener('click', searchVolcano);
+                document.getElementById('volc-search-input').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') searchVolcano();
+                });
+                // Validation on Input (Case Insensitive Match)
+                document.getElementById('volc-search-input').addEventListener('input', (e) => {
+                    const val = e.target.value.trim().toLowerCase();
+                    const btn = document.getElementById('volc-search-btn');
+                    // Check against volcano list (case insensitive)
+                    const isValid = rawVolcanoData.some(v => v.name.toLowerCase() === val);
+                    // Partial match logic for button enable
+                    const isPartial = rawVolcanoData.some(v => v.name.toLowerCase().includes(val));
+                    btn.disabled = !(isValid || (val.length > 2 && isPartial));
+
+                    if (isValid && e.inputType === 'insertReplacementText') {
+                       // Direct click from datalist
+                       searchVolcano();
+                       document.getElementById('volc-search-input').blur();
+                    }
+                });
+
                 // Search Listeners (Zones)
                 document.getElementById('zone-btn').addEventListener('click', searchZone);
                 document.getElementById('zone-input').addEventListener('keypress', (e) => {
@@ -1897,26 +2148,61 @@
                 function executeFlyTo(q) {
                     if (!q) return;
 
-                    // Show Popup
-                    document.getElementById('qi-place').innerText = q.place;
-                    document.getElementById('qi-mag').innerText = q.realMag.toFixed(2);
-                    document.getElementById('qi-depth').innerText = q.depth.toFixed(1);
-                    const d = new Date(q.time);
-                    document.getElementById('qi-time').innerText = d.toLocaleString();
+                    // Update Popup Content
+                    document.getElementById('qi-place').innerText = q.name || q.place;
 
+                    const label1 = document.getElementById('qi-label-1');
+                    const val1 = document.getElementById('qi-val-1');
+                    const label2 = document.getElementById('qi-label-2');
+                    const val2 = document.getElementById('qi-val-2');
+                    const label3 = document.getElementById('qi-label-3');
+                    const val3 = document.getElementById('qi-val-3');
                     const link = document.getElementById('qi-link');
-                    if (q.url) {
-                        link.href = q.url;
-                        link.style.display = 'block';
-                    } else {
+
+                    if (q.type === 'volcano') {
+                        label1.innerText = "Type:";
+                        val1.innerText = q.volcType;
+
+                        label2.innerText = "Elevation:";
+                        val2.innerText = q.elev + "m";
+
+                        label3.innerText = "Status:";
+                        val3.innerText = q.status;
+
                         link.style.display = 'none';
+                    } else {
+                        label1.innerText = "Magnitude:";
+                        val1.innerText = q.realMag.toFixed(2);
+
+                        label2.innerText = "Depth:";
+                        val2.innerText = q.depth.toFixed(1) + " km";
+
+                        label3.innerText = "Time:";
+                        val3.innerText = new Date(q.time).toLocaleString();
+
+                        if (q.url) {
+                            link.href = q.url;
+                            link.style.display = 'block';
+                        } else {
+                            link.style.display = 'none';
+                        }
                     }
+
                     document.getElementById('quake-info').style.display = 'block';
 
                     // Fly Camera
                     const PLOT_SCALE = 3000 / EARTH_RADIUS;
-                    const r_quake = EARTH_RADIUS - (q.depth * parseFloat(document.getElementById('depth-slider').value));
-                    const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
+                    // For volcanoes, depth is 0 (or negative technically), but we use 0 offset here
+                    // For quakes, we use depth slider
+                    let r_final = EARTH_RADIUS;
+                    if(q.type === 'quake') {
+                        r_final -= (q.depth * parseFloat(document.getElementById('depth-slider').value));
+                    }
+                    if(q.type === 'volcano') {
+                        r_final += (q.elev / 1000 * parseFloat(document.getElementById('depth-slider').value));
+                    }
+
+                    const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_final);
 
                     // Apply Plot Scale
                     const scx = (x / EARTH_RADIUS) * PLOT_SCALE;
