@@ -1745,13 +1745,21 @@
 
             const graphDiv = document.getElementById('chart-container');
 
-            // Stop normal auto-rotation
+            // 1. Capture Camera - Prioritize the internal Plotly state
+            let savedCamera = null;
+            if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
+                savedCamera = JSON.parse(JSON.stringify(graphDiv._fullLayout.scene.camera));
+            } else {
+                savedCamera = JSON.parse(JSON.stringify(currentCamera));
+            }
+
+            // Update global state to match
+            currentCamera = savedCamera;
+
+            // UI Updates
             autoRotate = false;
             document.getElementById('rotate-btn').innerHTML = '▶';
-
-            // Hide Side Panel
             document.getElementById('side-panel').classList.remove('open');
-            // Show Control Bar
             document.getElementById('timelapse-bar').classList.add('active');
 
             // Init State
@@ -1762,23 +1770,31 @@
             tlState.startTime = stats.minTime;
             tlState.endTime = stats.maxTime;
             tlState.currentTime = tlState.startTime;
-
-            // Pre-Sort Data
             tlState.sortedData = [...rawQuakeData].sort((a,b) => a.time - b.time);
 
-            // Revert to the uirevision fix
-            await Plotly.relayout('chart-container', { 'uirevision': 'true' });
+            // 2. LOCK CAMERA
+            // We update the camera explicitly to the captured value.
+            // We use a unique uirevision (Date.now()) to force Plotly to treat this
+            // as a "new" interaction context, preventing it from reverting to the
+            // camera state of the previous timelapse session.
+            await Plotly.relayout('chart-container', {
+                'uirevision': Date.now().toString(),
+                'scene.camera': savedCamera
+            });
 
-            // Hide Auxiliary Traces
+            // 3. Modify Data (Hide Traces)
             await Plotly.restyle('chart-container', { visible: false }, [5, 8]);
 
-            // Initial Draw
+            // 4. Draw
             await updateTimeLapseFrame();
         }
 
         function stopTimeLapse() {
             const graphDiv = document.getElementById('chart-container');
-            // Removed manual sync logic as requested
+            // Sync camera so main view doesn't jump
+            if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
+                currentCamera = JSON.parse(JSON.stringify(graphDiv._fullLayout.scene.camera));
+            }
 
             tlState.active = false;
             tlState.playing = false;
