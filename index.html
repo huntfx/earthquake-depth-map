@@ -126,6 +126,28 @@
         }
         #gps-btn:hover { background: rgba(0, 255, 255, 0.2); }
 
+        /* TIMELAPSE BUTTON (MOVED TO HEADER) */
+        #timelapse-mode-btn {
+            position: absolute; top: 15px; right: 215px; /* Left of GPS (165 + 50) */
+            background: rgba(0, 0, 0, 0.6);
+            color: cyan;
+            border: 1px solid cyan;
+            border-radius: 4px;
+            font-size: 20px;
+            padding: 0;
+            height: 40px;
+            width: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1001;
+            transition: all 0.2s;
+            line-height: 1;
+            box-sizing: border-box;
+        }
+        #timelapse-mode-btn:hover { background: rgba(0, 255, 255, 0.2); }
+
         #side-panel {
             position: fixed;
             top: 0; left: -340px;
@@ -241,7 +263,7 @@
 
         /* POPUP STYLES */
         #quake-info {
-            position: absolute; top: 60px; right: 15px; /* Moved down to avoid theme button */
+            position: absolute; top: 60px; right: 15px;
             width: 250px;
             background: rgba(20, 20, 20, 0.95);
             border: 1px solid cyan;
@@ -283,6 +305,58 @@
         }
         #qi-sim-btn:hover { background: rgba(0, 255, 255, 0.1); }
 
+        /* --- TIME LAPSE CONTROLS --- */
+        #timelapse-bar {
+            position: fixed;
+            bottom: 30px; left: 50%;
+            transform: translateX(-50%);
+            width: 90%; max-width: 600px;
+            background: rgba(20, 20, 20, 0.9);
+            border: 1px solid cyan;
+            border-radius: 8px;
+            padding: 15px;
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            gap: 10px;
+            z-index: 1004;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+        }
+
+        #timelapse-bar.active { display: flex; }
+
+        .tl-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+
+        #tl-date-display {
+            font-family: 'Courier New', monospace;
+            font-size: 18px;
+            font-weight: bold;
+            color: cyan;
+            min-width: 180px;
+            text-align: center;
+        }
+
+        #tl-play-btn {
+            background: none; border: 1px solid cyan; color: cyan;
+            width: 40px; height: 30px; cursor: pointer; border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px;
+        }
+        #tl-play-btn:hover { background: rgba(0, 255, 255, 0.2); }
+
+        #tl-close-btn {
+            background: none; border: none; color: #666; cursor: pointer; font-size: 18px;
+        }
+        #tl-close-btn:hover { color: white; }
+
+        #tl-scrubber { width: 100%; accent-color: cyan; cursor: pointer; }
+
+        .tl-select {
+            background: #333; color: white; border: 1px solid #555;
+            padding: 4px; border-radius: 3px; font-size: 11px;
+        }
+
+
         /* --- LIGHT MODE OVERRIDES --- */
         body.light-mode {
             background-color: #f0f0f0; /* Off-white background */
@@ -301,12 +375,12 @@
         body.light-mode #menu-btn:hover {
             background: rgba(0, 128, 128, 0.1);
         }
-        body.light-mode #theme-btn, body.light-mode #rotate-btn, body.light-mode #reset-btn, body.light-mode #gps-btn {
+        body.light-mode #theme-btn, body.light-mode #rotate-btn, body.light-mode #reset-btn, body.light-mode #gps-btn, body.light-mode #timelapse-mode-btn {
             background: rgba(255, 255, 255, 0.9);
             color: #333;
             border-color: #333;
         }
-        body.light-mode #theme-btn:hover, body.light-mode #rotate-btn:hover, body.light-mode #reset-btn:hover, body.light-mode #gps-btn:hover {
+        body.light-mode #theme-btn:hover, body.light-mode #rotate-btn:hover, body.light-mode #reset-btn:hover, body.light-mode #gps-btn:hover, body.light-mode #timelapse-mode-btn:hover {
             background: rgba(0, 0, 0, 0.05);
         }
         body.light-mode #gps-btn svg {
@@ -333,7 +407,8 @@
         body.light-mode input[type=date],
         body.light-mode input[type=text],
         body.light-mode input[type=number],
-        body.light-mode select {
+        body.light-mode select,
+        body.light-mode .tl-select {
             background: white;
             color: #333;
             border-color: #bbb;
@@ -382,6 +457,7 @@
             color: #333;
             border: 1px solid #ddd;
         }
+
         /* Popup Light Mode */
         body.light-mode #quake-info {
             background: rgba(255, 255, 255, 0.95);
@@ -422,6 +498,18 @@
             border: 1px solid #008080;
             box-shadow: 0 0 20px rgba(0,0,0,0.2);
         }
+
+        /* Time Lapse Light Mode */
+        body.light-mode #timelapse-bar {
+            background: rgba(255, 255, 255, 0.9);
+            border-color: #008080;
+            color: #333;
+        }
+        body.light-mode #tl-date-display, body.light-mode #tl-play-btn {
+            color: #008080;
+        }
+        body.light-mode #tl-play-btn { border-color: #008080; }
+        body.light-mode #tl-play-btn:hover { background: rgba(0, 128, 128, 0.1); }
     </style>
 </head>
 <body>
@@ -429,6 +517,7 @@
     <div id="loading">Initializing...</div>
 
     <!-- BUTTONS -->
+    <button id="timelapse-mode-btn">⏱</button>
     <button id="gps-btn">
         <svg viewBox="0 0 24 24">
             <circle cx="12" cy="12" r="10"></circle>
@@ -449,6 +538,43 @@
         <p><strong id="qi-label-3">Time:</strong> <span id="qi-val-3"></span></p>
         <button id="qi-sim-btn">Simulate Wave</button>
         <a href="#" target="_blank" id="qi-link">View on USGS ↗</a>
+    </div>
+
+    <!-- TIMELAPSE CONTROLS (Hidden by default) -->
+    <div id="timelapse-bar">
+        <div class="tl-row">
+            <button id="tl-play-btn">▶</button>
+            <div id="tl-date-display">----/--/-- --:--</div>
+            <select id="tl-speed" class="tl-select">
+                <option value="3600000">1 Hr / sec</option>
+                <option value="10800000">3 Hrs / sec</option>
+                <option value="21600000">6 Hrs / sec</option>
+                <option value="43200000">12 Hrs / sec</option>
+                <option value="86400000" selected>1 Day / sec</option>
+                <option value="172800000">2 Days / sec</option>
+                <option value="345600000">4 Days / sec</option>
+                <option value="604800000">1 Week / sec</option>
+            </select>
+            <button id="tl-close-btn">×</button>
+        </div>
+        <div class="tl-row">
+            <input type="range" id="tl-scrubber" min="0" max="100" value="0">
+        </div>
+        <div class="tl-row" style="font-size: 11px; color: #888; justify-content: flex-start;">
+             <label style="display:inline; margin-right:5px; margin-bottom:0;">Trail:</label>
+             <select id="tl-window" class="tl-select" style="width: auto;">
+                <option value="86400000">1 Day</option>
+                <option value="172800000">2 Days</option>
+                <option value="345600000" selected>4 Days</option>
+                <option value="604800000">1 Week</option>
+             </select>
+
+             <!-- NEW POP TOGGLE -->
+             <div style="margin-left: 15px; display: flex; align-items: center;">
+                <input type="checkbox" id="tl-pop-check" checked style="width: 14px; height: 14px; margin-right: 5px; accent-color: cyan;">
+                <label for="tl-pop-check" style="margin:0; cursor:pointer;">Pop In Animation</label>
+             </div>
+        </div>
     </div>
 
     <button id="menu-btn">☰ Settings</button>
@@ -675,6 +801,22 @@
 
         let autoRotate = true;
         let isLightMode = false;
+
+        // --- Time Lapse State ---
+        let tlState = {
+            active: false,
+            playing: false,
+            currentTime: 0,
+            startTime: 0,
+            endTime: 0,
+            speed: 86400000, // ms per tick (default 1 day)
+            windowSize: 345600000, // ms (default 4 days)
+            popEnabled: true, // Default to true
+            sortedData: [],
+            lastDrawTime: 0,
+            drawInterval: 100, // ms (10 FPS limit for visual chart updates)
+            animationFrameId: null
+        };
 
         // --- Helper Function for Frame Calc ---
         function getFrameCount() {
@@ -1208,11 +1350,12 @@
             const scaledLabelSize = originalLabelSize * visualMultiplier;
 
             // Apply Styling Override
-            // Trace 4 = Quakes, Trace 1 = Borders, Trace 2 = Plates, Trace 3 = Labels
+            // Trace 4 = Quakes (index 7 in react array), Trace 1 = Borders, Trace 2 = Plates, Trace 3 = Labels
+            // Note: Traces are: Grid(0), Borders(1), Plates(2), Labels(3), Volcano(4), SurfLine(5), VolcLine(6), Quake(7), Ghost(8), Pulse(9)
             await Plotly.restyle(graphDiv, {
                 'marker.showscale': false, // Hide colorbar
                 'marker.size': [scaledMarkerSizes] // Array of scaled sizes
-            }, [4]);
+            }, [7]);
 
             await Plotly.restyle(graphDiv, { 'line.width': scaledBorderWidth }, [1]);
             await Plotly.restyle(graphDiv, { 'line.width': scaledPlateWidth }, [2]);
@@ -1315,7 +1458,7 @@
                  await Plotly.restyle(graphDiv, {
                     'marker.showscale': true,
                     'marker.size': [normalSizes]
-                }, [4]);
+                }, [7]);
 
                  await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH }, [1]);
                  await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH }, [2]);
@@ -1335,7 +1478,7 @@
 
                  // Try to restore on error too
                  const normalSizes = calculateScaledSizes(1.0);
-                 await Plotly.restyle(graphDiv, { 'marker.showscale': true, 'marker.size': [normalSizes] }, [4]);
+                 await Plotly.restyle(graphDiv, { 'marker.showscale': true, 'marker.size': [normalSizes] }, [7]);
                  await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH }, [1]);
                  await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH }, [2]);
                  await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [3]);
@@ -1485,32 +1628,6 @@
             return points;
         }
 
-        // Helper: Trigger the pulse animation given a quake object
-        function triggerPulse(q) {
-            if (!q) return;
-
-            let animMaxRadius = 500; // default km
-
-            if (q.type === 'volcano') {
-                animMaxRadius = 100; // Small ping for volcanoes
-            } else {
-                // Calculate Felt Radius based on Magnitude
-                // Exponential scale: roughly M4=140km, M5=280km, M7=1000km, M9=4000km
-                // Ensure visible minimum for small quakes
-                // REMOVED CLAMP AS REQUESTED
-                animMaxRadius = Math.exp(q.realMag / 1.5) * 20;
-            }
-
-            // Initialize Pulse Animation State
-            // Store origin LAT/LON to calculate the circle correctly on sphere surface
-            pulseState = {
-                startTime: performance.now(),
-                lat: q.lat,
-                lon: q.lon,
-                maxRadius: animMaxRadius
-            };
-        }
-
         function animateGlobe() {
             const graphDiv = document.getElementById('chart-container');
             const scene = graphDiv._fullLayout ? graphDiv._fullLayout.scene : null;
@@ -1555,11 +1672,9 @@
                 const elapsedSeconds = (now - pulseState.startTime) / 1000;
 
                 // Current radius in km
-                // REMOVED CLAMP AS REQUESTED: starts from 0
                 const currentRadius = elapsedSeconds * speed;
 
                 // Calculate progress (0 to 1)
-                // REMOVED CLAMP AS REQUESTED
                 const progress = currentRadius / pulseState.maxRadius;
 
                 if (progress < 1) {
@@ -1590,8 +1705,204 @@
                 }
             }
 
+            // --- TIMELAPSE LOGIC IN ANIMATION FRAME ---
+            if (tlState.active && tlState.playing) {
+                const now = performance.now();
+
+                // Advance Time
+                // Note: We advance time every frame for smooth scrubber/UI updates
+                tlState.currentTime += tlState.speed / 60; // Assuming ~60fps, divide speed
+
+                if (tlState.currentTime >= tlState.endTime) {
+                    // LOOP BACK
+                    tlState.currentTime = tlState.startTime;
+                }
+
+                // Update UI every frame
+                const dateObj = new Date(tlState.currentTime);
+                document.getElementById('tl-date-display').innerText = dateObj.toISOString().slice(0, 16).replace('T', ' ');
+
+                const percent = ((tlState.currentTime - tlState.startTime) / (tlState.endTime - tlState.startTime)) * 100;
+                document.getElementById('tl-scrubber').value = percent;
+
+                // THROTTLE CHART UPDATES (Critical for performance)
+                if (now - tlState.lastDrawTime > tlState.drawInterval) {
+                    updateTimeLapseFrame();
+                    tlState.lastDrawTime = now;
+                }
+            }
+
             requestAnimationFrame(animateGlobe);
         }
+
+        // --- TIME LAPSE FUNCTIONS ---
+
+        async function startTimeLapse() {
+            if (rawQuakeData.length === 0) {
+                alert("No data loaded!");
+                return;
+            }
+
+            const graphDiv = document.getElementById('chart-container');
+
+            // Stop normal auto-rotation
+            autoRotate = false;
+            document.getElementById('rotate-btn').innerHTML = '▶';
+
+            // Hide Side Panel
+            document.getElementById('side-panel').classList.remove('open');
+            // Show Control Bar
+            document.getElementById('timelapse-bar').classList.add('active');
+
+            // Init State
+            tlState.active = true;
+            tlState.playing = true;
+            document.getElementById('tl-play-btn').innerText = '❚❚';
+
+            tlState.startTime = stats.minTime;
+            tlState.endTime = stats.maxTime;
+            tlState.currentTime = tlState.startTime;
+
+            // Pre-Sort Data
+            tlState.sortedData = [...rawQuakeData].sort((a,b) => a.time - b.time);
+
+            // Revert to the uirevision fix
+            await Plotly.relayout('chart-container', { 'uirevision': 'true' });
+
+            // Hide Auxiliary Traces
+            await Plotly.restyle('chart-container', { visible: false }, [5, 8]);
+
+            // Initial Draw
+            await updateTimeLapseFrame();
+        }
+
+        function stopTimeLapse() {
+            const graphDiv = document.getElementById('chart-container');
+            // Removed manual sync logic as requested
+
+            tlState.active = false;
+            tlState.playing = false;
+            document.getElementById('timelapse-bar').classList.remove('active');
+
+            // Restore visibility of main trace (show all)
+            updatePlot();
+        }
+
+        function updateTimeLapseFrame() {
+            // "Windowed" Fading Approach
+            const windowEnd = tlState.currentTime;
+            const windowStart = windowEnd - tlState.windowSize;
+
+            const depthScale = parseFloat(document.getElementById('depth-slider').value);
+            const baseSize = parseFloat(document.getElementById('size-slider').value);
+            const selectedPalette = document.getElementById('color-select').value;
+            const colorMode = document.getElementById('color-mode').value;
+
+            // Efficiently filter data (Since it's sorted, we could use binary search,
+            // but for <20k points, a linear scan on sorted array is acceptable for <100ms)
+
+            const visibleQuakes = tlState.sortedData.filter(q => q.time >= windowStart && q.time <= windowEnd);
+
+            const qx = [], qy = [], qz = [], colors = [], sizes = [];
+
+            visibleQuakes.forEach(q => {
+                const r_quake = EARTH_RADIUS - (q.depth * depthScale);
+                const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
+                qx.push(x); qy.push(y); qz.push(z);
+
+                // Fading Logic / "Pop" Logic
+                // How "fresh" is this quake? 1.0 = just happened, 0.0 = about to expire
+                const freshness = 1 - ((windowEnd - q.time) / tlState.windowSize);
+
+                // POP EFFECT: If freshness > 0.95 (very recent) AND Pop is enabled, make it BIG
+                let s = baseSize * (q.mag / 2.5);
+
+                if (tlState.popEnabled && freshness > 0.95) {
+                    s = s * 2.0; // Pop size
+                } else {
+                    // Fade size slightly as it gets older? Or keep constant?
+                    // Let's keep constant size after pop, maybe slight fade
+                    s = s * (0.5 + (0.5 * freshness));
+                }
+                sizes.push(s);
+
+                // Color Logic
+                let val;
+                if (colorMode === 'depth') val = q.depth;
+                else if (colorMode === 'mag') val = q.mag;
+                else val = q.time;
+                colors.push(val);
+            });
+
+            // --- COLOR SCALE FIX ---
+            // We must update cmin/cmax/title dynamically, otherwise switching
+            // from Magnitude (0-10) to Date (huge int) causes points to be white (saturated).
+            let cmin, cmax, cTitle;
+            if (colorMode === 'depth') {
+                cTitle = 'Depth (km)';
+                cmin = 0;
+                cmax = Math.ceil(stats.maxDepth / 100) * 100;
+            } else if (colorMode === 'mag') {
+                cTitle = 'Magnitude';
+                cmin = 0;
+                cmax = 9;
+            } else {
+                cTitle = 'Date';
+                cmin = stats.minTime;
+                cmax = stats.maxTime;
+            }
+
+            // Update Plotly Trace 7 (Quakes)
+            return Plotly.restyle('chart-container', {
+                x: [qx], y: [qy], z: [qz],
+                'marker.size': [sizes],
+                'marker.color': [colors],
+                'marker.cmin': cmin,
+                'marker.cmax': cmax,
+                'marker.colorbar.title.text': cTitle,
+                'marker.colorscale': selectedPalette
+            }, [7]);
+        }
+
+        // Time Lapse Event Listeners
+        document.getElementById('timelapse-mode-btn').addEventListener('click', startTimeLapse);
+        document.getElementById('tl-close-btn').addEventListener('click', stopTimeLapse);
+
+        document.getElementById('tl-play-btn').addEventListener('click', () => {
+            tlState.playing = !tlState.playing;
+            document.getElementById('tl-play-btn').innerText = tlState.playing ? '❚❚' : '▶';
+        });
+
+        document.getElementById('tl-speed').addEventListener('change', (e) => {
+            tlState.speed = parseInt(e.target.value);
+        });
+
+        document.getElementById('tl-window').addEventListener('change', (e) => {
+            tlState.windowSize = parseInt(e.target.value);
+            if (!tlState.playing) updateTimeLapseFrame(); // Update immediately if paused
+        });
+
+        document.getElementById('tl-pop-check').addEventListener('change', (e) => {
+            tlState.popEnabled = e.target.checked;
+            if (!tlState.playing) updateTimeLapseFrame(); // Update immediately if paused
+        });
+
+        document.getElementById('tl-scrubber').addEventListener('input', (e) => {
+            // Pause while scrubbing for performance
+            const wasPlaying = tlState.playing;
+            tlState.playing = false;
+            document.getElementById('tl-play-btn').innerText = '▶';
+
+            const percent = parseFloat(e.target.value);
+            tlState.currentTime = tlState.startTime + ((tlState.endTime - tlState.startTime) * (percent / 100));
+
+            // Update Text
+            const dateObj = new Date(tlState.currentTime);
+            document.getElementById('tl-date-display').innerText = dateObj.toISOString().slice(0, 16).replace('T', ' ');
+
+            updateTimeLapseFrame();
+        });
+
 
         function updateLabels() {
             document.getElementById('size-val').innerText = parseFloat(document.getElementById('size-slider').value).toFixed(1);
@@ -1625,6 +1936,9 @@
         }
 
         function updatePlot(isInitial = false) {
+            // If Time Lapse is active, don't let this function override the visualization unless we are resetting
+            if (tlState.active && !isInitial) return;
+
             const depthScale = parseFloat(document.getElementById('depth-slider').value);
             const baseSize = parseFloat(document.getElementById('size-slider').value);
 
@@ -1703,17 +2017,17 @@
 
                 // Build Surface Lines (Earthquakes)
                 if (showSurfaceLines) {
-                     const [sx, sy, sz] = latLonToXYZ(q.lat, q.lon, EARTH_RADIUS);
-                     // Line from Surface (sx, sy, sz) to Quake (x, y, z)
-                     slx.push(sx); sly.push(sy); slz.push(sz);
-                     slx.push(x);  sly.push(y);  slz.push(z);
-                     // Add breaks to disconnect lines
-                     slx.push(null); sly.push(null); slz.push(null);
+                      const [sx, sy, sz] = latLonToXYZ(q.lat, q.lon, EARTH_RADIUS);
+                      // Line from Surface (sx, sy, sz) to Quake (x, y, z)
+                      slx.push(sx); sly.push(sy); slz.push(sz);
+                      slx.push(x);  sly.push(y);  slz.push(z);
+                      // Add breaks to disconnect lines
+                      slx.push(null); sly.push(null); slz.push(null);
 
-                     // Push color values for both vertices and the break
-                     lineColors.push(val);
-                     lineColors.push(val);
-                     lineColors.push(val);
+                      // Push color values for both vertices and the break
+                      lineColors.push(val);
+                      lineColors.push(val);
+                      lineColors.push(val);
                 }
 
                 i++;
@@ -1914,7 +2228,8 @@
                     aspectmode: 'data',
                     dragmode: 'orbit'
                 },
-                showlegend: false
+                showlegend: false,
+                uirevision: 'true' // Add uirevision to allow user interaction to persist across updates
             };
 
             if (isInitial) {
@@ -2013,9 +2328,14 @@
                 inputs.forEach(id => {
                     document.getElementById(id).addEventListener('input', () => {
                         updateLabels();
-                        const isFilter = id.includes('min') || id.includes('max') || id.includes('filter');
-                        if(!isFilter) updatePlot(); // Plotly react for visuals
-                        if(isFilter) updatePlot(); // We also need to re-calc points for filters
+                        // IF TIMELAPSE IS ACTIVE, redraw frame immediately for visual feedback
+                        if (tlState.active) {
+                             updateTimeLapseFrame();
+                        } else {
+                             const isFilter = id.includes('min') || id.includes('max') || id.includes('filter');
+                             if(!isFilter) updatePlot(); // Plotly react for visuals
+                             if(isFilter) updatePlot(); // We also need to re-calc points for filters
+                        }
                     });
                 });
 
@@ -2131,21 +2451,15 @@
                     );
                 });
 
-                function showError(msg) {
-                    const loadingDiv = document.getElementById('loading');
-                    loadingDiv.innerText = "Error: " + msg;
-                    loadingDiv.style.color = '#ff4444';
-                    loadingDiv.style.display = 'block';
+                document.getElementById('color-select').addEventListener('change', () => {
+                    if (tlState.active) updateTimeLapseFrame();
+                    else updatePlot();
+                });
 
-                    setTimeout(() => {
-                        loadingDiv.style.display = 'none';
-                        loadingDiv.style.color = ''; // Reset to default (CSS handles it)
-                        loadingDiv.innerText = "Initializing...";
-                    }, 3000);
-                }
-
-                document.getElementById('color-select').addEventListener('change', () => updatePlot());
-                document.getElementById('color-mode').addEventListener('change', () => updatePlot());
+                document.getElementById('color-mode').addEventListener('change', () => {
+                    if (tlState.active) updateTimeLapseFrame();
+                    else updatePlot();
+                });
 
                 document.getElementById('load-btn').addEventListener('click', () => fetchDataAndPlot(false));
 
@@ -2195,10 +2509,16 @@
                 document.getElementById('qi-sim-btn').addEventListener('click', () => {
                     if (selectedQuake) {
                         // SYNC CAMERA HERE
+                        const graphDiv = document.getElementById('chart-container');
                         if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
-                            currentCamera = graphDiv._fullLayout.scene.camera;
+                            currentCamera = JSON.parse(JSON.stringify(graphDiv._fullLayout.scene.camera));
                         }
+
+                        // Trigger the wave
                         triggerPulse(selectedQuake);
+
+                        // Center camera on it (fixed jump issue)
+                        executeFlyTo(selectedQuake);
                     }
                 });
 
@@ -2302,6 +2622,14 @@
                 function executeFlyTo(q) {
                     if (!q) return;
 
+                    const graphDiv = document.getElementById('chart-container');
+                    // --- CAMERA SYNC ---
+                    // Sync before calculating new target to avoid snap-back
+                    // This fixes issues where interactions after timelapse/search used stale coordinates
+                    if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
+                        currentCamera = JSON.parse(JSON.stringify(graphDiv._fullLayout.scene.camera));
+                    }
+
                     // Store global selection
                     selectedQuake = q;
 
@@ -2349,9 +2677,6 @@
                     }
 
                     document.getElementById('quake-info').style.display = 'block';
-
-                    // Trigger the animation first
-                    // triggerPulse(q); // DISABLED CLICK TRIGGER
 
                     // Fly Camera
                     const PLOT_SCALE = 3000 / EARTH_RADIUS;
