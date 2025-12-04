@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Earthquake Audio Debugger</title>
+    <style>
+        body {
+            background-color: #111;
+            color: cyan;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background: #222;
+            padding: 30px;
+            border: 1px solid cyan;
+            border-radius: 8px;
+            width: 400px;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+        }
+
+        h1 { margin-top: 0; text-align: center; border-bottom: 1px solid #444; padding-bottom: 15px; }
+
+        .control-group { margin-bottom: 20px; }
+
+        label { display: flex; justify-content: space-between; margin-bottom: 5px; font-weight: bold; }
+
+        input[type=range] {
+            width: 100%;
+            cursor: pointer;
+            accent-color: cyan;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            font-size: 18px;
+            background: transparent;
+            color: cyan;
+            border: 2px solid cyan;
+            border-radius: 4px;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: rgba(0, 255, 255, 0.2);
+            box-shadow: 0 0 15px cyan;
+        }
+
+        button:active {
+            background: cyan;
+            color: black;
+        }
+
+        #stats {
+            margin-top: 20px;
+            padding: 10px;
+            background: #000;
+            border: 1px solid #333;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .stat-row { display: flex; justify-content: space-between; }
+        .stat-val { color: white; }
+
+        canvas {
+            margin-top: 20px;
+            width: 100%;
+            height: 100px;
+            background: #000;
+            border: 1px solid #444;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Audio Debugger</h1>
+
+        <div class="control-group">
+            <label>Magnitude: <span id="mag-val" style="color:white">5.0</span></label>
+            <input type="range" id="mag-slider" min="0" max="10" step="0.1" value="5.0">
+        </div>
+
+        <div class="control-group">
+            <label>Depth (km): <span id="depth-val" style="color:white">10</span></label>
+            <input type="range" id="depth-slider" min="0" max="800" step="10" value="10">
+        </div>
+
+        <button id="play-btn">Play Sound</button>
+
+        <canvas id="oscilloscope"></canvas>
+
+        <div id="stats">
+            <div class="stat-row">Calculated Freq: <span id="stat-freq" class="stat-val">--- Hz</span></div>
+            <div class="stat-row">Snapped Note: <span id="stat-note" class="stat-val">---</span></div>
+            <div class="stat-row">Waveform: <span id="stat-wave" class="stat-val">---</span></div>
+            <div class="stat-row">Volume: <span id="stat-vol" class="stat-val">---</span></div>
+            <div class="stat-row">Duration: <span id="stat-dur" class="stat-val">--- s</span></div>
+        </div>
+    </div>
+
+    <script>
+        // --- Audio Context ---
+        let audioCtx;
+        let analyser;
+        let canvas, canvasCtx;
+        let animationId;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 2048;
+
+                // Visualizer Setup
+                canvas = document.getElementById('oscilloscope');
+                canvasCtx = canvas.getContext('2d');
+                drawVisualizer();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        // --- UI Updates ---
+        const magSlider = document.getElementById('mag-slider');
+        const depthSlider = document.getElementById('depth-slider');
+        const magVal = document.getElementById('mag-val');
+        const depthVal = document.getElementById('depth-val');
+
+        function updateUI() {
+            magVal.innerText = parseFloat(magSlider.value).toFixed(1);
+            depthVal.innerText = depthSlider.value;
+        }
+
+        magSlider.addEventListener('input', updateUI);
+        depthSlider.addEventListener('input', updateUI);
+
+        // --- Exact Logic from Previous Code ---
+
+        function snapToScale(freq) {
+            // Convert frequency to nearest MIDI note
+            const baseFreq = 440;
+            const semitones = 12 * Math.log2(freq / baseFreq);
+            let midi = Math.round(semitones) + 69;
+
+            // C Major Pentatonic: C, D, E, G, A
+            // Relative to C (0): 0, 2, 4, 7, 9
+            // MIDI 60 is C4. 60 % 12 = 0.
+            const allowedPitchClasses = [0, 2, 4, 7, 9];
+
+            let bestMidi = midi;
+            let found = false;
+
+            for (let offset = 0; offset < 6; offset++) {
+                 let m1 = midi + offset;
+                 if (allowedPitchClasses.includes((m1 % 12 + 12) % 12)) {
+                     bestMidi = m1;
+                     break;
+                 }
+                 if (offset > 0) {
+                     let m2 = midi - offset;
+                     if (allowedPitchClasses.includes((m2 % 12 + 12) % 12)) {
+                         bestMidi = m2;
+                         break;
+                     }
+                 }
+            }
+
+            return {
+                freq: baseFreq * Math.pow(2, (bestMidi - 69) / 12),
+                midi: bestMidi
+            };
+        }
+
+        function playSound() {
+            initAudio();
+
+            const mag = parseFloat(magSlider.value);
+            const depth = parseFloat(depthSlider.value);
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            // --- FREQUENCY LOGIC ---
+            let rawFreq;
+            let type;
+
+            if (mag < 3.0) {
+                // Small: High, clear tone
+                // Base 800Hz, drops slightly with depth
+                rawFreq = 800 - (depth * 0.5);
+                type = 'sine';
+            } else {
+                // Large: Low, heavy rumble
+                // Base 300Hz, drop 80Hz per magnitude above 5.0
+                rawFreq = 300 - ((mag - 5.0) * 80) - (depth * 0.1);
+                // Use Sawtooth/Square for grit
+                type = mag >= 7.5 ? 'square' : 'sawtooth';
+            }
+
+            // Safety Cap: Minimum 30Hz
+            rawFreq = Math.max(20, rawFreq);
+
+            // Snap to Scale
+            const snapped = snapToScale(rawFreq);
+            const finalFreq = snapped.freq;
+
+            osc.type = type;
+            osc.frequency.value = finalFreq;
+
+            // --- VOLUME LOGIC ---
+            // Mag 3 ~ very quiet, Mag 8 ~ loud
+            const vol = Math.min(0.5, (Math.pow(mag, 3) / 1500) + 0.02);
+
+            // --- DURATION LOGIC ---
+            // Mag 3 = 0.2s, Mag 9 = 1.4s
+            const duration = 0.2 + (Math.max(0, mag - 3) * 0.2);
+
+            // Wiring
+            osc.connect(gain);
+            gain.connect(analyser); // Connect to visualizer
+            analyser.connect(audioCtx.destination); // Connect to speakers
+
+            // Envelope
+            const now = audioCtx.currentTime;
+            osc.start(now);
+
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(vol, now + 0.02); // Fast attack
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+            osc.stop(now + duration + 0.1);
+
+            // --- Update Debug Stats ---
+            document.getElementById('stat-freq').innerText = finalFreq.toFixed(2) + " Hz";
+            document.getElementById('stat-note').innerText = "MIDI " + snapped.midi;
+            document.getElementById('stat-wave').innerText = type.toUpperCase();
+            document.getElementById('stat-vol').innerText = (vol * 100).toFixed(1) + "%";
+            document.getElementById('stat-dur').innerText = duration.toFixed(2) + " s";
+        }
+
+        // --- Visualizer ---
+        function drawVisualizer() {
+            animationId = requestAnimationFrame(drawVisualizer);
+
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteTimeDomainData(dataArray);
+
+            canvasCtx.fillStyle = 'black';
+            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+            canvasCtx.lineWidth = 2;
+            canvasCtx.strokeStyle = 'cyan';
+            canvasCtx.beginPath();
+
+            const sliceWidth = canvas.width * 1.0 / bufferLength;
+            let x = 0;
+
+            for (let i = 0; i < bufferLength; i++) {
+                const v = dataArray[i] / 128.0;
+                const y = v * canvas.height / 2;
+
+                if (i === 0) {
+                    canvasCtx.moveTo(x, y);
+                } else {
+                    canvasCtx.lineTo(x, y);
+                }
+
+                x += sliceWidth;
+            }
+
+            canvasCtx.lineTo(canvas.width, canvas.height / 2);
+            canvasCtx.stroke();
+        }
+
+        document.getElementById('play-btn').addEventListener('click', playSound);
+
+    </script>
+</body>
+</html>
