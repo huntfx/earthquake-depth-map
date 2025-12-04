@@ -569,10 +569,16 @@
                 <option value="604800000">1 Week</option>
              </select>
 
-             <!-- NEW POP TOGGLE -->
+             <!-- POP TOGGLE -->
              <div style="margin-left: 15px; display: flex; align-items: center;">
                 <input type="checkbox" id="tl-pop-check" checked style="width: 14px; height: 14px; margin-right: 5px; accent-color: cyan;">
                 <label for="tl-pop-check" style="margin:0; cursor:pointer;">Pop In Animation</label>
+             </div>
+
+             <!-- SOUND TOGGLE -->
+             <div style="margin-left: 15px; display: flex; align-items: center;">
+                <input type="checkbox" id="tl-sound-check" style="width: 14px; height: 14px; margin-right: 5px; accent-color: cyan;">
+                <label for="tl-sound-check" style="margin:0; cursor:pointer;">Sound</label>
              </div>
         </div>
     </div>
@@ -812,11 +818,87 @@
             speed: 86400000, // ms per tick (default 1 day)
             windowSize: 345600000, // ms (default 4 days)
             popEnabled: true, // Default to true
+            soundEnabled: false,
+            lastSoundTime: 0,
             sortedData: [],
             lastDrawTime: 0,
-            drawInterval: 100, // ms (10 FPS limit for visual chart updates)
+            drawInterval: 25, // ms (10 FPS limit for visual chart updates)
             animationFrameId: null
         };
+
+        // --- Audio Context ---
+        let audioCtx;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playQuakeSound(q, delay = 0) {
+            if (!audioCtx) return;
+
+            // Safety: Clamp magnitude (handle negative or non-finite values)
+            const safeMag = Math.max(0, Number.isFinite(q.realMag) ? q.realMag : 0);
+
+            // Safety: Ensure delay is finite
+            if (!Number.isFinite(delay)) delay = 0;
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            const panner = audioCtx.createStereoPanner();
+
+            // Frequency Calculation (Pitch)
+            // 1. Small/Medium (< 5.0): Higher base (800Hz) for glassy pings.
+            // 2. Large (>= 5.0): Start lower (300Hz) and drop heavily with magnitude (Bass).
+            let freq;
+            if (safeMag < 5.0) {
+                // Small: High, clear tone
+                freq = 800 - (q.depth * 0.5);
+                osc.type = 'sine';
+            } else {
+                // Large: Low, heavy rumble
+                // Base 300Hz, drop 80Hz per magnitude above 5.0
+                freq = 300 - ((safeMag - 5.0) * 80) - (q.depth * 0.1);
+                // Use Sawtooth/Square for grit
+                osc.type = safeMag >= 7.5 ? 'square' : 'sawtooth';
+            }
+
+            // Safety Cap: Minimum 40Hz to avoid sub-sonic issues
+            freq = Math.max(40, freq);
+            osc.frequency.value = freq;
+
+            // Volume: Exponential curve (Power 3)
+            // Mag 3 ~ very quiet, Mag 8 ~ loud
+            const vol = Math.min(0.5, Math.pow(safeMag, 3) / 1500);
+
+            // Safety check for volume
+            const safeVol = Number.isFinite(vol) ? vol : 0;
+
+            // Pan: -180 to 180 -> -1 to 1
+            panner.pan.value = q.lon / 180;
+
+            // Connect nodes
+            osc.connect(panner);
+            panner.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            // Envelope (ADSR-ish)
+            const now = audioCtx.currentTime + delay; // Apply calculated delay
+            osc.start(now);
+
+            // Duration varies by magnitude: Mag 3 = 0.2s, Mag 9 = 1.4s
+            const duration = 0.2 + (Math.max(0, safeMag - 3) * 0.2);
+
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(safeVol, now + 0.02); // Fast attack
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+            osc.stop(now + duration + 0.1);
+        }
 
         // --- Helper Function for Frame Calc ---
         function getFrameCount() {
@@ -1716,6 +1798,8 @@
                 if (tlState.currentTime >= tlState.endTime) {
                     // LOOP BACK
                     tlState.currentTime = tlState.startTime;
+                    // Also reset sound tracker
+                    tlState.lastSoundTime = tlState.startTime;
                 }
 
                 // Update UI every frame
@@ -1724,6 +1808,43 @@
 
                 const percent = ((tlState.currentTime - tlState.startTime) / (tlState.endTime - tlState.startTime)) * 100;
                 document.getElementById('tl-scrubber').value = percent;
+
+                // AUDIO LOGIC (Decoupled from visual draw)
+                if (tlState.soundEnabled) {
+                     // Ensure we don't miss the first quake by checking against startTime - small buffer if lastSoundTime reset
+                     let checkTime = tlState.lastSoundTime;
+                     if (tlState.currentTime < tlState.lastSoundTime) {
+                         // Looped
+                         checkTime = tlState.startTime - 1000; // Look slightly before start to catch t=minTime quakes
+                         tlState.lastSoundTime = checkTime;
+                     }
+
+                     const newQuakes = tlState.sortedData.filter(q =>
+                         q.time > checkTime && q.time <= tlState.currentTime
+                     );
+
+                     if (newQuakes.length > 0) {
+                         // Prioritize by Real Magnitude (Largest First)
+                         newQuakes.sort((a, b) => b.realMag - a.realMag);
+                         const limit = 1; // Limit to 1 per frame to prevent clipping/muddy audio
+                         const count = Math.min(newQuakes.length, limit);
+
+                         // Calculate timing offset within this frame based on simulation duration
+                         const simDuration = tlState.currentTime - checkTime;
+
+                         for(let k=0; k < count; k++) {
+                             let delay = 0;
+                             if (simDuration > 0) {
+                                 const quakeOffset = newQuakes[k].time - checkTime;
+                                 const relativePos = quakeOffset / simDuration;
+                                 // Map relative position (0..1) to frame duration (approx 16ms)
+                                 delay = relativePos * (1/60);
+                             }
+                             playQuakeSound(newQuakes[k], delay);
+                         }
+                     }
+                     tlState.lastSoundTime = tlState.currentTime;
+                }
 
                 // THROTTLE CHART UPDATES (Critical for performance)
                 if (now - tlState.lastDrawTime > tlState.drawInterval) {
@@ -1743,23 +1864,25 @@
                 return;
             }
 
+            // Init Audio Context on user interaction
+            initAudio();
+
             const graphDiv = document.getElementById('chart-container');
 
-            // 1. Capture Camera - Prioritize the internal Plotly state
-            let savedCamera = null;
+            // 1. Capture current camera state deeply to avoid reference issues
+            let savedCamera = currentCamera;
             if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
                 savedCamera = JSON.parse(JSON.stringify(graphDiv._fullLayout.scene.camera));
-            } else {
-                savedCamera = JSON.parse(JSON.stringify(currentCamera));
+                currentCamera = savedCamera; // Update global state
             }
 
-            // Update global state to match
-            currentCamera = savedCamera;
-
-            // UI Updates
+            // Stop normal auto-rotation
             autoRotate = false;
             document.getElementById('rotate-btn').innerHTML = '▶';
+
+            // Hide Side Panel
             document.getElementById('side-panel').classList.remove('open');
+            // Show Control Bar
             document.getElementById('timelapse-bar').classList.add('active');
 
             // Init State
@@ -1770,31 +1893,30 @@
             tlState.startTime = stats.minTime;
             tlState.endTime = stats.maxTime;
             tlState.currentTime = tlState.startTime;
+            tlState.lastSoundTime = tlState.startTime - 1000; // Reset audio tracker slightly before start
+
+            // Pre-Sort Data
             tlState.sortedData = [...rawQuakeData].sort((a,b) => a.time - b.time);
 
-            // 2. LOCK CAMERA
-            // We update the camera explicitly to the captured value.
-            // We use a unique uirevision (Date.now()) to force Plotly to treat this
-            // as a "new" interaction context, preventing it from reverting to the
-            // camera state of the previous timelapse session.
+            // 2. CRITICAL FIX: Use a UNIQUE uirevision (Date.now()) instead of a constant string.
+            // This forces Plotly to treat this as a fresh interaction session, adopting the
+            // 'savedCamera' as the new baseline, rather than snapping back to the state
+            // stored under the old 'true' key.
             await Plotly.relayout('chart-container', {
                 'uirevision': Date.now().toString(),
                 'scene.camera': savedCamera
             });
 
-            // 3. Modify Data (Hide Traces)
+            // Hide Auxiliary Traces
             await Plotly.restyle('chart-container', { visible: false }, [5, 8]);
 
-            // 4. Draw
+            // Initial Draw
             await updateTimeLapseFrame();
         }
 
         function stopTimeLapse() {
             const graphDiv = document.getElementById('chart-container');
-            // Sync camera so main view doesn't jump
-            if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
-                currentCamera = JSON.parse(JSON.stringify(graphDiv._fullLayout.scene.camera));
-            }
+            // Removed manual sync logic as requested
 
             tlState.active = false;
             tlState.playing = false;
@@ -1805,19 +1927,36 @@
         }
 
         function updateTimeLapseFrame() {
-            // "Windowed" Fading Approach
+            // "Windowed" Fading Approach with Seamless Loop Support
             const windowEnd = tlState.currentTime;
             const windowStart = windowEnd - tlState.windowSize;
 
             const depthScale = parseFloat(document.getElementById('depth-slider').value);
-            const baseSize = parseFloat(document.getElementById('size-slider').value);
+
+            // FIX 1: Calculate base size dynamically using the slider logic, just like calculateScaledSizes
+            const baseSizeInput = parseFloat(document.getElementById('size-slider').value);
+            const magBonusScale = parseFloat(document.getElementById('mag-slider').value);
+            const MIDPOINT = 1.618;
+
             const selectedPalette = document.getElementById('color-select').value;
             const colorMode = document.getElementById('color-mode').value;
 
-            // Efficiently filter data (Since it's sorted, we could use binary search,
-            // but for <20k points, a linear scan on sorted array is acceptable for <100ms)
+            // Standard filter for current time window
+            let visibleQuakes = tlState.sortedData.filter(q => q.time >= windowStart && q.time <= windowEnd);
 
-            const visibleQuakes = tlState.sortedData.filter(q => q.time >= windowStart && q.time <= windowEnd);
+            // --- WRAP-AROUND LOGIC ---
+            // If we are near the start of the loop (windowStart is before minTime),
+            // we should also show quakes from the very end of the timeline to create a seamless fade.
+            if (windowStart < tlState.startTime) {
+                const wrapOverlap = tlState.startTime - windowStart;
+                const wrapCutoff = tlState.endTime - wrapOverlap;
+
+                // Grab quakes from end of timeline
+                const wrappedQuakes = tlState.sortedData.filter(q => q.time >= wrapCutoff);
+
+                // Add them to visible list, but we need to treat their time specially for fading calculation
+                visibleQuakes = visibleQuakes.concat(wrappedQuakes);
+            }
 
             const qx = [], qy = [], qz = [], colors = [], sizes = [];
 
@@ -1827,12 +1966,30 @@
                 qx.push(x); qy.push(y); qz.push(z);
 
                 // Fading Logic / "Pop" Logic
+                let timeDiff = windowEnd - q.time;
+
+                // Correct timeDiff for wrapped quakes (if quake is from end of timeline but we are at start)
+                if (timeDiff < 0) {
+                    // This means q.time is bigger than windowEnd (it's from the end of the loop)
+                    // The actual time passed since that quake is:
+                    // (Time passed in current loop) + (Time passed at end of previous loop)
+                    // = (currentTime - startTime) + (endTime - q.time)
+                    timeDiff = (windowEnd - tlState.startTime) + (tlState.endTime - q.time);
+                }
+
                 // How "fresh" is this quake? 1.0 = just happened, 0.0 = about to expire
-                const freshness = 1 - ((windowEnd - q.time) / tlState.windowSize);
+                const freshness = 1 - (timeDiff / tlState.windowSize);
 
-                // POP EFFECT: If freshness > 0.95 (very recent) AND Pop is enabled, make it BIG
-                let s = baseSize * (q.mag / 2.5);
+                // 1. Base Size Logic from Slider
+                let sizeFactor = q.mag;
+                if (q.mag > MIDPOINT) {
+                    const diff = q.mag - MIDPOINT;
+                    sizeFactor += (Math.pow(diff, 3) * magBonusScale);
+                }
+                // Visual multiplier 1.6 used in renderFrames, 1.0 in normal plot. Let's use 1.0 for consistency.
+                let s = baseSizeInput * (sizeFactor / 2.5);
 
+                // 2. Apply Pop/Fade on top of calculated base size
                 if (tlState.popEnabled && freshness > 0.95) {
                     s = s * 2.0; // Pop size
                 } else {
@@ -1887,6 +2044,8 @@
         document.getElementById('tl-play-btn').addEventListener('click', () => {
             tlState.playing = !tlState.playing;
             document.getElementById('tl-play-btn').innerText = tlState.playing ? '❚❚' : '▶';
+            // Resume audio context if it was suspended
+            initAudio();
         });
 
         document.getElementById('tl-speed').addEventListener('change', (e) => {
@@ -1903,6 +2062,11 @@
             if (!tlState.playing) updateTimeLapseFrame(); // Update immediately if paused
         });
 
+        document.getElementById('tl-sound-check').addEventListener('change', (e) => {
+            tlState.soundEnabled = e.target.checked;
+            if (e.target.checked) initAudio(); // Ensure audio context is ready
+        });
+
         document.getElementById('tl-scrubber').addEventListener('input', (e) => {
             // Pause while scrubbing for performance
             const wasPlaying = tlState.playing;
@@ -1915,6 +2079,9 @@
             // Update Text
             const dateObj = new Date(tlState.currentTime);
             document.getElementById('tl-date-display').innerText = dateObj.toISOString().slice(0, 16).replace('T', ' ');
+
+            // Reset audio tracker so we don't play a million sounds when scrubbing finishes
+            tlState.lastSoundTime = tlState.currentTime;
 
             updateTimeLapseFrame();
         });
@@ -2527,7 +2694,7 @@
                         // SYNC CAMERA HERE
                         const graphDiv = document.getElementById('chart-container');
                         if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
-                            currentCamera = JSON.parse(JSON.stringify(graphDiv._fullLayout.scene.camera));
+                            currentCamera = graphDiv._fullLayout.scene.camera;
                         }
 
                         // Trigger the wave
