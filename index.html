@@ -1960,6 +1960,13 @@
 
             const qx = [], qy = [], qz = [], colors = [], sizes = [];
 
+            // Persistent Colorbar Fix: Add dummy point if no quakes
+            if (visibleQuakes.length === 0) {
+                qx.push(null); qy.push(null); qz.push(null);
+                colors.push(stats.minTime); // Dummy value within range
+                sizes.push(0);
+            }
+
             visibleQuakes.forEach(q => {
                 const r_quake = EARTH_RADIUS - (q.depth * depthScale);
                 const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
@@ -2008,9 +2015,9 @@
             });
 
             // --- COLOR SCALE FIX ---
-            // We must update cmin/cmax/title dynamically, otherwise switching
-            // from Magnitude (0-10) to Date (huge int) causes points to be white (saturated).
             let cmin, cmax, cTitle;
+            let tickmode = 'auto', tickvals = undefined, ticktext = undefined;
+
             if (colorMode === 'depth') {
                 cTitle = 'Depth (km)';
                 cmin = 0;
@@ -2023,18 +2030,39 @@
                 cTitle = 'Date';
                 cmin = stats.minTime;
                 cmax = stats.maxTime;
+
+                 // Date Formatting for Colorbar
+                const range = cmax - cmin;
+                if (range > 0) {
+                     tickmode = 'array';
+                     // Generate 5 ticks
+                     const step = range / 4;
+                     tickvals = [cmin, cmin + step, cmin + step*2, cmin + step*3, cmax];
+                     ticktext = tickvals.map(t => new Date(t).toISOString().split('T')[0]);
+                }
             }
 
             // Update Plotly Trace 7 (Quakes)
-            return Plotly.restyle('chart-container', {
+            const updateObj = {
                 x: [qx], y: [qy], z: [qz],
                 'marker.size': [sizes],
                 'marker.color': [colors],
                 'marker.cmin': cmin,
                 'marker.cmax': cmax,
-                'marker.colorbar.title.text': cTitle,
-                'marker.colorscale': selectedPalette
-            }, [7]);
+                'marker.colorscale': selectedPalette,
+                'marker.colorbar.tickmode': tickmode,
+                'marker.colorbar.tickvals': tickvals,
+                'marker.colorbar.ticktext': ticktext
+            };
+
+            // Remove Title in Timelapse Mode
+            if (tlState.active) {
+                 updateObj['marker.colorbar.title.text'] = "";
+            } else {
+                 updateObj['marker.colorbar.title.text'] = cTitle;
+            }
+
+            return Plotly.restyle('chart-container', updateObj, [7]);
         }
 
         // Time Lapse Event Listeners
@@ -2507,19 +2535,21 @@
                 staticPlateArrays = processPlates(platesJson);
                 staticGridArrays = generateWireframeGrid();
 
-                const inputs = ['size-slider', 'mag-slider', 'depth-slider', 'min-mag-slider', 'max-mag-slider', 'min-depth-filter', 'max-depth-filter'];
-                inputs.forEach(id => {
+                const visualInputs = ['size-slider', 'mag-slider', 'depth-slider'];
+                visualInputs.forEach(id => {
                     document.getElementById(id).addEventListener('input', () => {
                         updateLabels();
-                        // IF TIMELAPSE IS ACTIVE, redraw frame immediately for visual feedback
                         if (tlState.active) {
                              updateTimeLapseFrame();
                         } else {
-                             const isFilter = id.includes('min') || id.includes('max') || id.includes('filter');
-                             if(!isFilter) updatePlot(); // Plotly react for visuals
-                             if(isFilter) updatePlot(); // We also need to re-calc points for filters
+                             updatePlot();
                         }
                     });
+                });
+
+                const filterInputs = ['min-mag-slider', 'max-mag-slider', 'min-depth-filter', 'max-depth-filter'];
+                filterInputs.forEach(id => {
+                    document.getElementById(id).addEventListener('input', updateLabels);
                 });
 
                 // Handle frame slider separately (UI only)
@@ -2694,7 +2724,7 @@
                         // SYNC CAMERA HERE
                         const graphDiv = document.getElementById('chart-container');
                         if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
-                            currentCamera = graphDiv._fullLayout.scene.camera;
+                            currentCamera = JSON.parse(JSON.stringify(graphDiv._fullLayout.scene.camera));
                         }
 
                         // Trigger the wave
@@ -2848,7 +2878,10 @@
                         val2.innerText = q.depth.toFixed(1) + " km";
 
                         label3.innerText = "Time:";
-                        val3.innerText = new Date(q.time).toLocaleString();
+                        // Fix popup time format here
+                        const d = new Date(q.time);
+                        const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                        val3.innerText = dateStr;
 
                         if (q.url) {
                             link.href = q.url;
