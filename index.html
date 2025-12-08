@@ -1466,25 +1466,33 @@
             loading.style.color = ''; // Reset to default (CSS handles it)
 
             // Store original props for cleanup (using unified widths)
-            // UPDATED: Now using global constants
             const originalLabelSize = document.getElementById('labels-checkbox').checked ? 12 : 0;
+
+            // 1. Get Base Size explicitly for Volcanoes
+            const baseRenderSize = parseFloat(document.getElementById('size-slider').value);
 
             // --- SETUP PHASE: Scale & Hide UI ---
             // Based on empirical testing, scaling clamps around 1.6x even at higher resolutions
             const visualMultiplier = Math.min(effectiveMultiplier, 1.6);
 
             const scaledMarkerSizes = calculateScaledSizes(visualMultiplier);
+            const scaledVolcanoSize = baseRenderSize * visualMultiplier;
+
             const scaledBorderWidth = BASE_BORDER_WIDTH * visualMultiplier;
             const scaledPlateWidth = BASE_PLATE_WIDTH * visualMultiplier;
             const scaledLabelSize = originalLabelSize * visualMultiplier;
 
             // Apply Styling Override
-            // Trace 4 = Quakes (index 7 in react array), Trace 1 = Borders, Trace 2 = Plates, Trace 3 = Labels
-            // Note: Traces are: Grid(0), Borders(1), Plates(2), Labels(3), Volcano(4), SurfLine(5), VolcLine(6), Quake(7), Ghost(8), Pulse(9)
+            // Trace 4 = Volcanoes. We need to restyle it specifically.
             await Plotly.restyle(graphDiv, {
                 'marker.showscale': false, // Hide colorbar
                 'marker.size': [scaledMarkerSizes] // Array of scaled sizes
             }, [7]);
+
+            // NEW: Apply Scaled Size to Volcanoes (Trace 4)
+            await Plotly.restyle(graphDiv, {
+                'marker.size': scaledVolcanoSize
+            }, [4]);
 
             await Plotly.restyle(graphDiv, { 'line.width': scaledBorderWidth }, [1]);
             await Plotly.restyle(graphDiv, { 'line.width': scaledPlateWidth }, [2]);
@@ -1583,6 +1591,11 @@
                 // Calculate standard sizes (multiplier 1)
                 const normalSizes = calculateScaledSizes(1.0);
 
+                // NEW: Reset Volcano Size
+                await Plotly.restyle(graphDiv, {
+                    'marker.size': baseRenderSize
+                }, [4]);
+
                 // Restore Styling
                  await Plotly.restyle(graphDiv, {
                     'marker.showscale': true,
@@ -1608,6 +1621,11 @@
                  // Try to restore on error too
                  const normalSizes = calculateScaledSizes(1.0);
                  await Plotly.restyle(graphDiv, { 'marker.showscale': true, 'marker.size': [normalSizes] }, [7]);
+
+                 // Reset Volcanoes on Error
+                 const baseRenderSize = parseFloat(document.getElementById('size-slider').value);
+                 await Plotly.restyle(graphDiv, { 'marker.size': baseRenderSize }, [4]);
+
                  await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH }, [1]);
                  await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH }, [2]);
                  await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [3]);
@@ -2021,9 +2039,8 @@
                 // Correct timeDiff for wrapped quakes (if quake is from end of timeline but we are at start)
                 if (timeDiff < 0) {
                     // This means q.time is bigger than windowEnd (it's from the end of the loop)
-                    // The actual time passed since that quake is:
-                    // (Time passed in current loop) + (Time passed at end of previous loop)
-                    // = (currentTime - startTime) + (endTime - q.time)
+                    // The actual time passed in current loop is:
+                    // (currentTime - startTime) + (endTime - q.time)
                     timeDiff = (windowEnd - tlState.startTime) + (tlState.endTime - q.time);
                 }
 
@@ -2379,8 +2396,8 @@
                 hoverinfo: 'text',
                 customdata: vCustom,
                 marker: {
-                    symbol: 'cross',
-                    size: baseSize * 2.0,
+                    symbol: 'x',
+                    size: baseSize,
                     color: volcColor,
                     line: { color: volcLine, width: 1.5 },
                     opacity: 1.0
