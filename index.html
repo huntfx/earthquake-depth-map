@@ -1667,11 +1667,11 @@
             const originalLabelSize = document.getElementById('labels-checkbox').checked ? 12 : 0;
             const scaledLabelSize = originalLabelSize * visualMultiplier;
 
-            await Plotly.restyle(graphDiv, { 'marker.showscale': false, 'marker.size': [scaledMarkerSizes] }, [7]);
-            await Plotly.restyle(graphDiv, { 'marker.size': scaledVolcanoSize }, [4]);
-            await Plotly.restyle(graphDiv, { 'line.width': scaledBorderWidth }, [1]);
-            await Plotly.restyle(graphDiv, { 'line.width': scaledPlateWidth }, [2]);
-            await Plotly.restyle(graphDiv, { 'textfont.size': scaledLabelSize }, [3]);
+            await Plotly.restyle(graphDiv, { 'marker.showscale': false, 'marker.size': [scaledMarkerSizes] }, [8]);
+            await Plotly.restyle(graphDiv, { 'marker.size': scaledVolcanoSize }, [5]);
+            await Plotly.restyle(graphDiv, { 'line.width': scaledBorderWidth }, [2]);
+            await Plotly.restyle(graphDiv, { 'line.width': scaledPlateWidth }, [3]);
+            await Plotly.restyle(graphDiv, { 'textfont.size': scaledLabelSize }, [4]);
 
             const currentCenter = currentCamera.center || {x: 0, y: 0, z: 0};
             const startEye = { ...currentCamera.eye };
@@ -1735,11 +1735,11 @@
 
                 await Plotly.relayout(graphDiv, { 'scene.camera': { eye: startEye, center: currentCenter, up: startUp } });
                 const normalSizes = calculateScaledSizes(1.0);
-                await Plotly.restyle(graphDiv, { 'marker.size': baseRenderSize * 2.0 }, [4]);
-                await Plotly.restyle(graphDiv, { 'marker.showscale': true, 'marker.size': [normalSizes] }, [7]);
-                await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH }, [1]);
-                await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH }, [2]);
-                await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [3]);
+                await Plotly.restyle(graphDiv, { 'marker.size': baseRenderSize * 2.0 }, [5]);
+                await Plotly.restyle(graphDiv, { 'marker.showscale': true, 'marker.size': [normalSizes] }, [8]);
+                await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH }, [2]);
+                await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH }, [3]);
+                await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [4]);
 
                 setTimeout(() => { loading.style.display = 'none'; loading.innerText = "Initializing..."; }, 2000);
 
@@ -1965,10 +1965,10 @@
                         'line.color': colorString,
                         'line.width': [width],
                         'visible': true
-                    }, [9]);
+                    }, [10]);
                 } else {
                     // Animation Complete - Ensure it's fully transparent/hidden
-                    Plotly.restyle('chart-container', {'visible': false}, [9]);
+                    Plotly.restyle('chart-container', {'visible': false}, [10]);
                     pulseState = null;
                 }
             }
@@ -2119,7 +2119,7 @@
             });
 
             // Hide Auxiliary Traces
-            await Plotly.restyle('chart-container', { visible: false }, [5, 8]);
+            await Plotly.restyle('chart-container', { visible: false }, [6, 9]);
 
             // Initial Draw
             await updateTimeLapseFrame();
@@ -2272,7 +2272,7 @@
                  updateObj['marker.colorbar.title.text'] = cTitle;
             }
 
-            return Plotly.restyle('chart-container', updateObj, [7]);
+            return Plotly.restyle('chart-container', updateObj, [8]);
         }
 
         // Time Lapse Event Listeners
@@ -2655,9 +2655,28 @@
             }
             layout.scene.camera = currentCamera;
 
+            // --- OCCLUSION CORE (Trace 1) ---
+            // A single giant point at the center of the earth.
+            // Markers are 2D billboards, so it always faces the camera.
+            // We size it to cover the full earth diameter (roughly).
+            const coreColor = isLightMode ? '#f0f0f0' : 'black';
+            const coreOpacity = isLightMode ? 0.4 : 0.2;
+            const coreTrace = {
+                type: 'scatter3d',
+                mode: 'markers',
+                x: [0], y: [0], z: [0],
+                marker: {
+                    color: coreColor,
+                    size: 10000, // Arbitrary large number
+                    sizemode: 'diameter',
+                    opacity: coreOpacity
+                },
+                hoverinfo: 'none'
+            };
+
             // Updated Trace Order - pulseTrace is Trace 9
             Plotly.react('chart-container', [
-                gridTrace, borderTrace, plateTrace, labelTrace,
+                gridTrace, coreTrace, borderTrace, plateTrace, labelTrace,
                 volcanoTrace, surfaceLineTrace, volcanoLineTrace,
                 quakeTrace, ghostTrace, pulseTrace
             ], layout, {responsive: true});
