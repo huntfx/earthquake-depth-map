@@ -756,8 +756,11 @@
         </div>
 
         <div class="control-group">
-            <label>Frame Count: <span id="frame-count-val" class="val">256</span></label>
-            <input type="range" id="frame-slider" min="1" max="32" step="0.001" value="16">
+            <label>Frame Count</label>
+            <div style="display:flex; gap:10px; align-items: center;">
+                <input type="range" id="frame-slider" min="1" max="1024" step="1" value="250" style="flex:2">
+                <input type="number" id="frame-number" value="360" min="1" style="width: 70px; flex:1; text-align:right;">
+            </div>
         </div>
 
         <div class="control-group">
@@ -850,9 +853,8 @@
                     camera: currentCamera,
                     settings: {
                         // UI State
-                        isLightMode: isLightMode, // SAVE THEME
-                        frameSliderValue: document.getElementById('frame-slider').value, // SAVE FRAME SLIDER
-
+                        isLightMode: isLightMode,
+                        frameValue: document.getElementById('frame-number').value,
                         startDate: document.getElementById('start-date').value,
                         endDate: document.getElementById('end-date').value,
                         minMag: document.getElementById('min-mag-slider').value,
@@ -1506,7 +1508,6 @@
             }
 
             // Restore Frame Slider & Inputs
-            document.getElementById('frame-slider').value = s.frameSliderValue;
             document.getElementById('start-date').value = s.startDate;
             document.getElementById('end-date').value = s.endDate;
             document.getElementById('min-mag-slider').value = s.minMag;
@@ -1530,6 +1531,9 @@
             document.getElementById('labels-checkbox').checked = s.labels;
             document.getElementById('volcanoes-checkbox').checked = s.volcanoes;
             document.getElementById('surface-lines-checkbox').checked = s.surfaceLines;
+
+            document.getElementById('frame-number').value = s.frameValue;
+            document.getElementById('frame-slider').value = s.frameValue;
 
             // Force UI labels to update (Frame Count, etc.)
             updateLabels();
@@ -2287,9 +2291,6 @@
             document.getElementById('min-depth-filter-val').innerText = document.getElementById('min-depth-filter').value;
             document.getElementById('max-depth-filter-val').innerText = document.getElementById('max-depth-filter').value;
 
-            // Update frame count display (Square Law)
-            document.getElementById('frame-count-val').innerText = getFrameCount();
-
             // Update Scale Label
             document.getElementById('render-scale-val').innerText = document.getElementById('render-scale').value + "x";
         }
@@ -2663,6 +2664,26 @@
                 staticBorderArrays = processedBorders.borders;
                 staticLabelArrays = processedBorders.labels;
 
+                // --- Frame Control Sync ---
+                const frameSlider = document.getElementById('frame-slider');
+                const frameInput = document.getElementById('frame-number');
+
+                // 1. Slider moves -> Update Input
+                frameSlider.addEventListener('input', (e) => {
+                    frameInput.value = e.target.value;
+                    updateLabels(); // Updates the "Total Frames" text if you have it elsewhere
+                });
+
+                // 2. Input types -> Update Slider (visually) but keep exact value
+                frameInput.addEventListener('input', (e) => {
+                    let val = parseInt(e.target.value);
+                    if (!val || val < 1) val = 1;
+
+                    // Update slider visual (it will just max out if value > max)
+                    frameSlider.value = val;
+                    updateLabels();
+                });
+
                 // Process Volcanoes
                 rawVolcanoData = processVolcanoes(volcanoCsv);
                 console.log(`Loaded ${rawVolcanoData.length} volcanoes.`);
@@ -2715,7 +2736,6 @@
                 });
 
                 // Handle frame slider separately (UI only)
-                document.getElementById('frame-slider').addEventListener('input', updateLabels);
                 document.getElementById('render-scale').addEventListener('input', updateLabels);
 
                 // Listen for checkbox change
@@ -3184,9 +3204,6 @@
 
                 container.style.display = 'block';
                 text.innerText = `Previous render stopped at frame ${session.progress.current + 1} of ${session.progress.total}.`;
-
-                // Auto-fill the inputs to match the session (Visual feedback)
-                document.getElementById('frame-count-val').innerText = session.progress.total;
             }
         }
 
