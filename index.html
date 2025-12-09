@@ -1028,10 +1028,8 @@
 
         // --- Helper Function for Frame Calc ---
         function getFrameCount() {
-            const val = parseFloat(document.getElementById('frame-slider').value);
-            // Square law: x^2 mapping
-            // Range 1..32 maps to 1..1024. Default 16 maps to 256.
-            return Math.round(val * val);
+            const val = parseInt(document.getElementById('frame-number').value);
+            return val > 0 ? val : 1;
         }
 
         // --- Helper to calculate size array for renderer ---
