@@ -3090,14 +3090,6 @@
                 function executeFlyTo(q) {
                     if (!q) return;
 
-                    const graphDiv = document.getElementById('chart-container');
-                    // --- CAMERA SYNC ---
-                    // Sync before calculating new target to avoid snap-back
-                    // This fixes issues where interactions after timelapse/search used stale coordinates
-                    if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
-                        currentCamera = JSON.parse(JSON.stringify(graphDiv._fullLayout.scene.camera));
-                    }
-
                     // Store global selection
                     selectedQuake = q;
 
@@ -3199,13 +3191,50 @@
                     };
                 }
 
-                // --- EVENT BASED CAMERA TRACKING (No polling) ---
+                function getSafeCamera(layoutScene) {
+                    if (!layoutScene || !layoutScene.camera) return null;
+
+                    const cam = layoutScene.camera;
+                    return {
+                        // If 'eye' is missing, use default zoom (1.5)
+                        eye: cam.eye ? { ...cam.eye } : { x: 1.5, y: 1.5, z: 1.5 },
+                        // If 'center' is missing, it means 0,0,0 (Plotly deletes it to save memory)
+                        center: cam.center ? { ...cam.center } : { x: 0, y: 0, z: 0 },
+                        // If 'up' is missing, it means Z-axis is up
+                        up: cam.up ? { ...cam.up } : { x: 0, y: 0, z: 1 }
+                    };
+                }
+
+                // --- EVENT BASED CAMERA TRACKING ---
+                // This keeps currentCamera up-to-date passively.
+                // We use this INSTEAD of querying _fullLayout inside click handlers.
                 graphDiv.on('plotly_relayout', (eventData) => {
+                    // Case 1: Full camera object update
                     if (eventData['scene.camera']) {
-                        currentCamera = eventData['scene.camera'];
+                        const cam = eventData['scene.camera'];
+                        currentCamera = {
+                            eye: cam.eye ? { ...cam.eye } : currentCamera.eye,
+                            center: cam.center ? { ...cam.center } : currentCamera.center,
+                            up: cam.up ? { ...cam.up } : currentCamera.up
+                        };
                     }
+                    // Case 2: Partial updates (e.g. dragging updates just one axis)
+                    // We iterate over keys to catch things like 'scene.camera.eye.x'
                     else {
-                       // Standard fallback, don't aggressively sync fullLayout here
+                        let changed = false;
+                        Object.keys(eventData).forEach(key => {
+                            if (key.startsWith('scene.camera.')) {
+                                // Determine which part (eye, center, up)
+                                const parts = key.split('.'); // ['scene', 'camera', 'eye', 'x']
+                                const category = parts[2]; // 'eye', 'center', or 'up'
+                                const axis = parts[3];     // 'x', 'y', or 'z'
+
+                                if (category && axis && currentCamera[category]) {
+                                    currentCamera[category][axis] = eventData[key];
+                                    changed = true;
+                                }
+                            }
+                        });
                     }
                 });
 
