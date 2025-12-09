@@ -782,7 +782,6 @@
         const BORDERS_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
         const PLATES_URL = "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json";
         const VOLCANOES_URL = "https://raw.githubusercontent.com/plotly/datasets/master/volcano_db.csv";
-        const RENDER_SESSION_KEY = 'quake_render_session';
 
         // --- Configuration Constants ---
         // These are the single source of truth for widths. Change them here to update everywhere.
@@ -790,6 +789,9 @@
         const BASE_PLATE_WIDTH = 4;
 
         const ROTATION_SPEED = -0.001;
+
+        const WINDOW_ID = Math.random().toString(36).substr(2, 9);
+        const RENDER_SESSION_KEY = `quake_render_session_${WINDOW_ID}`;
 
         // --- State ---
         let rawQuakeData = [];
@@ -845,16 +847,23 @@
         };
 
         const RenderSession = {
+            // Start a new job
             start: (totalFrames) => {
+                // Generate Unique ID for this job
+                const jobId = 'job_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+
+                // 1. Save this ID to this tab's SessionStorage (survives reload, unique to tab)
+                sessionStorage.setItem('active_render_job', jobId);
+
                 const state = {
+                    id: jobId, // Store ID inside state too
                     status: 'active',
                     timestamp: Date.now(),
                     progress: { current: -1, total: totalFrames },
                     camera: currentCamera,
                     settings: {
-                        // UI State
+                        frameValue: document.getElementById('frame-number').value, // Remember the new input!
                         isLightMode: isLightMode,
-                        frameValue: document.getElementById('frame-number').value,
                         startDate: document.getElementById('start-date').value,
                         endDate: document.getElementById('end-date').value,
                         minMag: document.getElementById('min-mag-slider').value,
@@ -877,26 +886,43 @@
                         surfaceLines: document.getElementById('surface-lines-checkbox').checked
                     }
                 };
-                localStorage.setItem(RENDER_SESSION_KEY, JSON.stringify(state));
+
+                // 2. Save full data to LocalStorage (Shared storage, but unique key)
+                localStorage.setItem(jobId, JSON.stringify(state));
+                return jobId;
             },
 
             update: (frameIndex) => {
-                const raw = localStorage.getItem(RENDER_SESSION_KEY);
+                // Get the ID this tab is responsible for
+                const jobId = sessionStorage.getItem('active_render_job');
+                if (!jobId) return;
+
+                const raw = localStorage.getItem(jobId);
                 if (raw) {
                     const state = JSON.parse(raw);
                     state.progress.current = frameIndex;
-                    localStorage.setItem(RENDER_SESSION_KEY, JSON.stringify(state));
+                    localStorage.setItem(jobId, JSON.stringify(state));
                 }
             },
 
             complete: () => {
-                localStorage.removeItem(RENDER_SESSION_KEY);
+                const jobId = sessionStorage.getItem('active_render_job');
+                if (jobId) {
+                    localStorage.removeItem(jobId);       // Clear data
+                    sessionStorage.removeItem('active_render_job'); // Clear tab association
+                }
                 document.getElementById('resume-container').style.display = 'none';
             },
 
             check: () => {
-                const raw = localStorage.getItem(RENDER_SESSION_KEY);
+                // 1. Check if THIS tab had an active job
+                const jobId = sessionStorage.getItem('active_render_job');
+                if (!jobId) return null;
+
+                // 2. Retrieve the data for that job
+                const raw = localStorage.getItem(jobId);
                 if (!raw) return null;
+
                 const state = JSON.parse(raw);
                 if (state.status === 'active' && state.progress.current < state.progress.total - 1) {
                     return state;
