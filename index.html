@@ -510,6 +510,26 @@
         }
         body.light-mode #tl-play-btn { border-color: #008080; }
         body.light-mode #tl-play-btn:hover { background: rgba(0, 128, 128, 0.1); }
+        body.light-mode #resume-container {
+            background: #ffe6e6 !important;   /* Light pink background */
+            border-color: #eebbbb !important; /* Softer red border */
+        }
+
+        body.light-mode #resume-container div:first-child {
+            color: #cc0000 !important;        /* Dark red "CRASH DETECTED" text */
+        }
+
+        body.light-mode #resume-text {
+            color: #333333 !important;        /* Dark grey text for readability */
+        }
+
+        body.light-mode #resume-btn {
+            background: #ff4444 !important;   /* Keep button bright red */
+            color: white !important;
+        }
+        body.light-mode #resume-btn:hover {
+            background: #cc0000 !important;
+        }
     </style>
 </head>
 <body>
