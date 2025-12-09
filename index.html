@@ -821,6 +821,7 @@
 
         let autoRotate = true;
         let isLightMode = false;
+        let rotationTimeout = null;
 
         // --- Time Lapse State ---
         let tlState = {
@@ -2740,23 +2741,45 @@
 
                 // Rotation Toggle
                 document.getElementById('rotate-btn').addEventListener('click', () => {
-                    autoRotate = !autoRotate;
                     const btn = document.getElementById('rotate-btn');
-                    btn.innerHTML = autoRotate ? '❚❚' : '▶';
+
+                    // Case A: User clicked during the 1-second Grace Period
+                    if (rotationTimeout) {
+                        stopRotation(); // Clears timeout, sets autoRotate=false, sets Icon to ▶
+                        return;
+                    }
+
+                    // Case B: Standard Toggle
+                    if (autoRotate) {
+                        stopRotation();
+                    } else {
+                        autoRotate = true;
+                        btn.innerHTML = '❚❚';
+                    }
                 });
 
                 // Reset View
                 document.getElementById('reset-btn').addEventListener('click', () => {
-                    // Clear search
-                    searchMarker = null;
+                    // 1. Clear any existing rotation/timers first
+                    stopRotation();
+
+                    // 2. Clear search & Reset Camera
                     const defaultCam = calculateResponsiveCamera();
                     currentCamera = defaultCam;
                     Plotly.relayout('chart-container', { 'scene.camera': defaultCam });
 
-                    // Auto-play on reset
-                    autoRotate = true;
+                    // 3. UI State: Show "Pause" icon immediately.
+                    // This tells the user: "I am active (or about to be). Click me to stop."
                     document.getElementById('rotate-btn').innerHTML = '❚❚';
-                    updatePlot(); // Clear marker
+
+                    // 4. Update plot (to clear markers etc)
+                    updatePlot();
+
+                    // 5. Start Grace Period (1 Second)
+                    rotationTimeout = setTimeout(() => {
+                        autoRotate = true;
+                        rotationTimeout = null; // Clear the reference
+                    }, 1000);
                 });
 
                 // Render frames
@@ -2921,7 +2944,14 @@
                 // --- INTERACTION LOGIC ---
                 const graphDiv = document.getElementById('chart-container');
                 const stopRotation = () => {
+                    // 1. Cancel the grace period timer if it's running
+                    if (rotationTimeout) {
+                        clearTimeout(rotationTimeout);
+                        rotationTimeout = null;
+                    }
+                    // 2. Stop actual rotation
                     autoRotate = false;
+                    // 3. Update UI to "Play" icon (meaning we are currently paused)
                     document.getElementById('rotate-btn').innerHTML = '▶';
                 };
 
