@@ -1,0 +1,1 @@
+ffmpeg -i frame_%04d.png -vf "crop=min(iw\,ih):min(iw\,ih),scale=1080:1080:force_original_aspect_ratio=decrease" video.mp4

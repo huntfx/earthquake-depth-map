@@ -731,8 +731,18 @@
             <label for="surface-lines-checkbox">Surface Lines</label>
             <input type="checkbox" id="surface-lines-checkbox">
         </div>
-
         <h3>Render Frames</h3>
+
+        <div id="resume-container" style="display:none; margin-bottom: 15px; padding: 10px; background: #331111; border: 1px solid #ff4444; border-radius: 4px;">
+            <div style="color: #ff8888; font-size: 11px; margin-bottom: 5px; font-weight: bold;">CRASH DETECTED</div>
+            <div style="color: #ddd; font-size: 11px; margin-bottom: 8px;" id="resume-text">
+                Incomplete render found (Frame 594 of 1024).
+            </div>
+            <button id="resume-btn" style="width: 100%; background: #ff4444; color: white; border: none; padding: 8px; border-radius: 3px; cursor: pointer; font-weight: bold; text-transform: uppercase;">
+                Resume Previous Render
+            </button>
+        </div>
+
         <div class="control-group">
             <label>Filename & Format</label>
             <div style="display:flex; gap:5px;">
@@ -741,19 +751,22 @@
                     <option value="png" selected>.png</option>
                     <option value="jpeg">.jpg</option>
                     <option value="webp">.webp</option>
-                    <option value="svg">.svg</option>
                 </select>
             </div>
         </div>
+
         <div class="control-group">
-            <label>Frames: <span id="frame-count-val" class="val">256</span></label>
+            <label>Frame Count: <span id="frame-count-val" class="val">256</span></label>
             <input type="range" id="frame-slider" min="1" max="32" step="0.001" value="16">
         </div>
+
         <div class="control-group">
             <label>Resolution Scale: <span id="render-scale-val" class="val">1x</span></label>
             <input type="range" id="render-scale" min="1" max="4" step="0.5" value="1">
         </div>
-        <button id="render-btn">Save Frames</button>
+
+        <button id="render-btn">Start New Render</button>
+
     </div>
 
     <div id="chart-container"></div>
@@ -766,6 +779,7 @@
         const BORDERS_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
         const PLATES_URL = "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json";
         const VOLCANOES_URL = "https://raw.githubusercontent.com/plotly/datasets/master/volcano_db.csv";
+        const RENDER_SESSION_KEY = 'quake_render_session';
 
         // --- Configuration Constants ---
         // These are the single source of truth for widths. Change them here to update everywhere.
@@ -824,6 +838,68 @@
             lastDrawTime: 0,
             drawInterval: 25, // ms (10 FPS limit for visual chart updates)
             animationFrameId: null
+        };
+
+        const RenderSession = {
+            start: (totalFrames) => {
+                const state = {
+                    status: 'active',
+                    timestamp: Date.now(),
+                    progress: { current: -1, total: totalFrames },
+                    camera: currentCamera,
+                    settings: {
+                        // UI State
+                        isLightMode: isLightMode, // SAVE THEME
+                        frameSliderValue: document.getElementById('frame-slider').value, // SAVE FRAME SLIDER
+
+                        startDate: document.getElementById('start-date').value,
+                        endDate: document.getElementById('end-date').value,
+                        minMag: document.getElementById('min-mag-slider').value,
+                        maxMag: document.getElementById('max-mag-slider').value,
+                        minDepth: document.getElementById('min-depth-filter').value,
+                        maxDepth: document.getElementById('max-depth-filter').value,
+                        limit: document.getElementById('limit-select').value,
+                        colorSelect: document.getElementById('color-select').value,
+                        colorMode: document.getElementById('color-mode').value,
+                        size: document.getElementById('size-slider').value,
+                        magBonus: document.getElementById('mag-slider').value,
+                        depthScale: document.getElementById('depth-slider').value,
+                        filename: document.getElementById('filename-pattern').value,
+                        format: document.getElementById('render-format').value,
+                        scale: document.getElementById('render-scale').value,
+                        borders: document.getElementById('borders-checkbox').checked,
+                        plates: document.getElementById('plates-checkbox').checked,
+                        labels: document.getElementById('labels-checkbox').checked,
+                        volcanoes: document.getElementById('volcanoes-checkbox').checked,
+                        surfaceLines: document.getElementById('surface-lines-checkbox').checked
+                    }
+                };
+                localStorage.setItem(RENDER_SESSION_KEY, JSON.stringify(state));
+            },
+
+            update: (frameIndex) => {
+                const raw = localStorage.getItem(RENDER_SESSION_KEY);
+                if (raw) {
+                    const state = JSON.parse(raw);
+                    state.progress.current = frameIndex;
+                    localStorage.setItem(RENDER_SESSION_KEY, JSON.stringify(state));
+                }
+            },
+
+            complete: () => {
+                localStorage.removeItem(RENDER_SESSION_KEY);
+                document.getElementById('resume-container').style.display = 'none';
+            },
+
+            check: () => {
+                const raw = localStorage.getItem(RENDER_SESSION_KEY);
+                if (!raw) return null;
+                const state = JSON.parse(raw);
+                if (state.status === 'active' && state.progress.current < state.progress.total - 1) {
+                    return state;
+                }
+                return null;
+            }
         };
 
         // --- Audio Context ---
@@ -1397,240 +1473,236 @@
             return { x: gx, y: gy, z: gz };
         }
 
-        // Frame Rendering
-        async function renderFrames() {
-            const loading = document.getElementById('loading');
+        async function resumeRender() {
+            const session = RenderSession.check();
+            if (!session) return;
 
-            // Check File System Access API support
-            if (!window.showDirectoryPicker) {
-                loading.style.display = 'block';
-                loading.innerText = "Error: Browser not supported. Use Chrome/Edge/Opera.";
-                loading.style.color = 'red';
-                setTimeout(() => {
-                    loading.style.display = 'none';
-                    loading.style.color = ''; // Reset to default (CSS handles it)
-                    loading.innerText = "Initializing...";
-                }, 4000);
-                return;
-            }
-
-            // Get filename pattern from UI
-            const filenamePattern = document.getElementById('filename-pattern').value || "frame_####";
-            const format = document.getElementById('render-format').value; // "png", "jpeg", etc.
-
-            // Get user directory
+            // 1. CRITICAL FIX: Ask for folder IMMEDIATELY to preserve User Gesture
+            // We cannot await the network call first, or the browser will block the folder picker.
             let dirHandle;
             try {
                 dirHandle = await window.showDirectoryPicker();
             } catch (e) {
-                if (e.name === 'AbortError') return;
-                console.warn("File System Error:", e);
-                showError(e.message || "Folder access cancelled or failed.");
+                return; // User cancelled
+            }
+
+            const loading = document.getElementById('loading');
+            loading.style.display = 'block';
+            loading.innerText = "Restoring Session...";
+
+            // 2. Restore UI Settings
+            const s = session.settings;
+
+            // Restore Theme
+            isLightMode = s.isLightMode;
+            const themeBtn = document.getElementById('theme-btn');
+            if (isLightMode) {
+                document.body.classList.add('light-mode');
+                themeBtn.innerHTML = '☾';
+            } else {
+                document.body.classList.remove('light-mode');
+                themeBtn.innerHTML = '☀';
+            }
+
+            // Restore Frame Slider & Inputs
+            document.getElementById('frame-slider').value = s.frameSliderValue;
+            document.getElementById('start-date').value = s.startDate;
+            document.getElementById('end-date').value = s.endDate;
+            document.getElementById('min-mag-slider').value = s.minMag;
+            document.getElementById('max-mag-slider').value = s.maxMag;
+            document.getElementById('min-depth-filter').value = s.minDepth;
+            document.getElementById('max-depth-filter').value = s.maxDepth;
+            document.getElementById('limit-select').value = s.limit;
+
+            document.getElementById('color-select').value = s.colorSelect;
+            document.getElementById('color-mode').value = s.colorMode;
+            document.getElementById('size-slider').value = s.size;
+            document.getElementById('mag-slider').value = s.magBonus;
+            document.getElementById('depth-slider').value = s.depthScale;
+
+            document.getElementById('filename-pattern').value = s.filename;
+            document.getElementById('render-format').value = s.format;
+            document.getElementById('render-scale').value = s.scale;
+
+            document.getElementById('borders-checkbox').checked = s.borders;
+            document.getElementById('plates-checkbox').checked = s.plates;
+            document.getElementById('labels-checkbox').checked = s.labels;
+            document.getElementById('volcanoes-checkbox').checked = s.volcanoes;
+            document.getElementById('surface-lines-checkbox').checked = s.surfaceLines;
+
+            // Force UI labels to update (Frame Count, etc.)
+            updateLabels();
+
+            // 3. Fetch Data
+            loading.innerText = "Restoring Data...";
+            try {
+                await fetchDataAndPlot(false);
+            } catch (e) {
+                alert("Could not download data. Check internet.");
+                loading.style.display = 'none';
                 return;
             }
 
-            // Stop auto-rotation NOW, just before rendering starts
+            // 4. Restore Camera
+            loading.innerText = "Aligning Camera...";
+            currentCamera = session.camera;
+            await Plotly.relayout('chart-container', { 'scene.camera': session.camera });
+
             autoRotate = false;
             document.getElementById('rotate-btn').innerHTML = '▶';
 
-            // Get inputs
-            const sliderMultiplier = parseFloat(document.getElementById('render-scale').value) || 1;
+            // 5. Start Render (Pass the directory handle we already got!)
+            await renderFrames(true, session, dirHandle);
+        }
+
+        // Frame Rendering
+        async function renderFrames(isResume = false, sessionData = null, preLoadedHandle = null) {
+            const loading = document.getElementById('loading');
+
+            if (!window.showDirectoryPicker) { showError("Browser not supported."); return; }
+
+            // --- SETUP VARIABLES ---
+            let startIndex = 0;
+            let numFrames = getFrameCount();
+
+            if (isResume && sessionData) {
+                startIndex = sessionData.progress.current + 1;
+                numFrames = sessionData.progress.total;
+            } else {
+                RenderSession.start(numFrames);
+            }
+
+            // Use pre-loaded handle if available (Resume Mode), otherwise ask (New Mode)
+            let dirHandle = preLoadedHandle;
+            if (!dirHandle) {
+                try {
+                    loading.innerText = "Select Folder...";
+                    dirHandle = await window.showDirectoryPicker();
+                } catch (e) {
+                    loading.style.display = 'none';
+                    return;
+                }
+            }
+
+            autoRotate = false;
+            document.getElementById('rotate-btn').innerHTML = '▶';
+
+            const filenamePattern = document.getElementById('filename-pattern').value;
+            const format = document.getElementById('render-format').value;
+            const sliderMultiplier = parseFloat(document.getElementById('render-scale').value);
+
             const graphDiv = document.getElementById('chart-container');
             const originalW = graphDiv.clientWidth;
             const originalH = graphDiv.clientHeight;
 
-            // Calculate Target Resolution
             let renderW = originalW * sliderMultiplier;
             let renderH = originalH * sliderMultiplier;
-
-            // Clamp to MAX_DIM (8192px)
             const MAX_DIM = 8192;
             if (renderW > MAX_DIM || renderH > MAX_DIM) {
-                 const ratio = renderW / renderH;
-                 if (renderW > renderH) {
-                     renderW = MAX_DIM;
-                     renderH = MAX_DIM / ratio;
-                 } else {
-                     renderH = MAX_DIM;
-                     renderW = MAX_DIM * ratio;
-                 }
+                const ratio = renderW / renderH;
+                if (renderW > renderH) { renderW = MAX_DIM; renderH = MAX_DIM / ratio; }
+                else { renderH = MAX_DIM; renderW = MAX_DIM * ratio; }
             }
-
-            // Calculate the ACTUAL multiplier applied (Effective Scale)
             const effectiveMultiplier = renderW / originalW;
 
-            // Logarithmic Frame count (Square Law Fix)
-            const numFrames = getFrameCount();
-
+            // --- VISUAL SCALING ---
+            loading.innerText = "Configuring Scene...";
             loading.style.display = 'block';
-            loading.style.color = ''; // Reset to default (CSS handles it)
 
-            // Store original props for cleanup (using unified widths)
-            const originalLabelSize = document.getElementById('labels-checkbox').checked ? 12 : 0;
-
-            // 1. Get Base Size explicitly for Volcanoes
-            const baseRenderSize = parseFloat(document.getElementById('size-slider').value);
-
-            // --- SETUP PHASE: Scale & Hide UI ---
-            // Based on empirical testing, scaling clamps around 1.6x even at higher resolutions
             const visualMultiplier = Math.min(effectiveMultiplier, 1.6);
-
             const scaledMarkerSizes = calculateScaledSizes(visualMultiplier);
-            const scaledVolcanoSize = baseRenderSize * visualMultiplier;
-
+            const baseRenderSize = parseFloat(document.getElementById('size-slider').value);
+            const scaledVolcanoSize = baseRenderSize * 2.0 * visualMultiplier;
             const scaledBorderWidth = BASE_BORDER_WIDTH * visualMultiplier;
             const scaledPlateWidth = BASE_PLATE_WIDTH * visualMultiplier;
+            const originalLabelSize = document.getElementById('labels-checkbox').checked ? 12 : 0;
             const scaledLabelSize = originalLabelSize * visualMultiplier;
 
-            // Apply Styling Override
-            // Trace 4 = Volcanoes. We need to restyle it specifically.
-            await Plotly.restyle(graphDiv, {
-                'marker.showscale': false, // Hide colorbar
-                'marker.size': [scaledMarkerSizes] // Array of scaled sizes
-            }, [7]);
-
-            // NEW: Apply Scaled Size to Volcanoes (Trace 4)
-            await Plotly.restyle(graphDiv, {
-                'marker.size': scaledVolcanoSize
-            }, [4]);
-
+            await Plotly.restyle(graphDiv, { 'marker.showscale': false, 'marker.size': [scaledMarkerSizes] }, [7]);
+            await Plotly.restyle(graphDiv, { 'marker.size': scaledVolcanoSize }, [4]);
             await Plotly.restyle(graphDiv, { 'line.width': scaledBorderWidth }, [1]);
             await Plotly.restyle(graphDiv, { 'line.width': scaledPlateWidth }, [2]);
             await Plotly.restyle(graphDiv, { 'textfont.size': scaledLabelSize }, [3]);
 
-
-            // Rendering Loop
             const currentCenter = currentCamera.center || {x: 0, y: 0, z: 0};
             const startEye = { ...currentCamera.eye };
             const startUp = { ...currentCamera.up };
 
-            // Calculate Vector relative to center
             const dx = startEye.x - currentCenter.x;
             const dy = startEye.y - currentCenter.y;
             const dz = startEye.z - currentCenter.z;
 
-            // Helper to wait for redraw
             const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-            // Helper for filename generation
             function generateFilename(template, index) {
                 const numStr = (index + 1).toString();
                 const hashMatch = template.match(/(#+)/);
-
                 let base = template;
-
                 if (hashMatch) {
                     const len = hashMatch[1].length;
                     const padded = numStr.padStart(len, '0');
                     base = template.replace(hashMatch[1], padded);
                 } else {
-                    // If no hash, pad with 4 zeros anyway
-                    const padded = numStr.padStart(4, '0');
-                    base = template + '_' + padded;
+                    base = template + '_' + numStr.padStart(4, '0');
                 }
-
-                // Ensure correct extension
-                if (!base.toLowerCase().endsWith('.' + format)) {
-                    base += '.' + format;
-                }
-
+                if (!base.toLowerCase().endsWith('.' + format)) base += '.' + format;
                 return base;
             }
 
             try {
-                for (let i = 0; i < numFrames; i++) {
+                for (let i = startIndex; i < numFrames; i++) {
+
                     loading.innerText = `Rendering frame ${i + 1}/${numFrames}...`;
 
                     const angle = (i / numFrames) * 2 * Math.PI;
                     const cos = Math.cos(angle);
                     const sin = Math.sin(angle);
-
-                    // Rotate the vector (Standard Z-axis rotation)
-                    // x' = x*cos - y*sin
-                    // y' = x*sin + y*cos
                     const newDx = dx * cos - dy * sin;
                     const newDy = dx * sin + dy * cos;
+                    const newEye = { x: currentCenter.x + newDx, y: currentCenter.y + newDy, z: currentCenter.z + dz };
 
-                    const newEye = {
-                        x: currentCenter.x + newDx,
-                        y: currentCenter.y + newDy,
-                        z: currentCenter.z + dz
-                    };
-
-                    // Update Camera
                     await Plotly.relayout(graphDiv, { 'scene.camera.eye': newEye });
+                    await wait(20);
 
-                    // Small delay to ensure render
-                    await wait(50);
+                    let dataUrl = await Plotly.toImage(graphDiv, { format: format, width: renderW, height: renderH });
+                    let res = await fetch(dataUrl);
+                    let blob = await res.blob();
 
-                    const dataUrl = await Plotly.toImage(graphDiv, {
-                        format: format,
-                        width: renderW,
-                        height: renderH
-                    });
-
-                    const res = await fetch(dataUrl);
-                    const blob = await res.blob();
-
-                    // Write to File System
                     const fileName = generateFilename(filenamePattern, i);
                     const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
                     const writable = await fileHandle.createWritable();
                     await writable.write(blob);
                     await writable.close();
+
+                    // Update session progress AFTER write
+                    RenderSession.update(i);
+
+                    dataUrl = null; res = null; blob = null;
                 }
 
                 loading.innerText = "Done!";
 
-                // --- CLEANUP PHASE ---
-                // Restore Camera to start
-                await Plotly.relayout(graphDiv, {
-                    'scene.camera': { eye: startEye, center: currentCenter, up: startUp }
-                });
+                RenderSession.complete();
 
-                // Calculate standard sizes (multiplier 1)
+                await Plotly.relayout(graphDiv, { 'scene.camera': { eye: startEye, center: currentCenter, up: startUp } });
                 const normalSizes = calculateScaledSizes(1.0);
-
-                // NEW: Reset Volcano Size
-                await Plotly.restyle(graphDiv, {
-                    'marker.size': baseRenderSize
-                }, [4]);
-
-                // Restore Styling
-                 await Plotly.restyle(graphDiv, {
-                    'marker.showscale': true,
-                    'marker.size': [normalSizes]
-                }, [7]);
-
-                 await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH }, [1]);
-                 await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH }, [2]);
-                 await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [3]);
+                await Plotly.restyle(graphDiv, { 'marker.size': baseRenderSize * 2.0 }, [4]);
+                await Plotly.restyle(graphDiv, { 'marker.showscale': true, 'marker.size': [normalSizes] }, [7]);
+                await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH }, [1]);
+                await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH }, [2]);
+                await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [3]);
 
                 setTimeout(() => { loading.style.display = 'none'; loading.innerText = "Initializing..."; }, 2000);
 
             } catch (err) {
-                 console.warn("Render Error:", err);
-                 loading.innerText = "Error during rendering.";
-                 loading.style.color = "red";
-                 setTimeout(() => {
-                    loading.style.display = 'none';
-                    loading.style.color = ''; // Reset to default (CSS handles it)
-                    loading.innerText = "Initializing...";
-                }, 4000);
-
-                 // Try to restore on error too
-                 const normalSizes = calculateScaledSizes(1.0);
-                 await Plotly.restyle(graphDiv, { 'marker.showscale': true, 'marker.size': [normalSizes] }, [7]);
-
-                 // Reset Volcanoes on Error
-                 const baseRenderSize = parseFloat(document.getElementById('size-slider').value);
-                 await Plotly.restyle(graphDiv, { 'marker.size': baseRenderSize }, [4]);
-
-                 await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH }, [1]);
-                 await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH }, [2]);
-                 await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [3]);
+                console.warn(err);
+                loading.innerText = "Crash! Refresh page to see 'Resume' button.";
+                loading.style.color = "red";
             }
         }
+
+        document.getElementById('render-btn').addEventListener('click', () => renderFrames(false));
+        document.getElementById('resume-btn').addEventListener('click', resumeRender);
 
         async function fetchDataAndPlot(isInitial = false) {
             const loading = document.getElementById('loading');
@@ -1919,6 +1991,35 @@
             }
 
             requestAnimationFrame(animateGlobe);
+        }
+
+        function saveRenderCamera() {
+            // Save the current camera state to LocalStorage
+            const camState = {
+                eye: currentCamera.eye,
+                center: currentCamera.center,
+                up: currentCamera.up
+            };
+            localStorage.setItem('earthquake_render_cam', JSON.stringify(camState));
+            console.log("Camera state saved:", camState);
+        }
+
+        function restoreRenderCamera() {
+            const saved = localStorage.getItem('earthquake_render_cam');
+            if (!saved) {
+                alert("No saved camera position found.");
+                return;
+            }
+            try {
+                const camState = JSON.parse(saved);
+                currentCamera = camState;
+                Plotly.relayout('chart-container', { 'scene.camera': camState });
+                // Disable rotation so user doesn't accidentally move it again
+                autoRotate = false;
+                document.getElementById('rotate-btn').innerHTML = '▶';
+            } catch (e) {
+                console.error("Failed to restore camera", e);
+            }
         }
 
         // --- TIME LAPSE FUNCTIONS ---
@@ -3035,10 +3136,27 @@
                 });
 
                 requestAnimationFrame(animateGlobe);
+                initResumeCheck();
 
             } catch (err) {
                 console.error("Critical Error:", err);
                 document.getElementById('loading').innerText = "Error initializing app.";
+            }
+        }
+
+        // --- INITIALIZATION CHECK ---
+        // Run this when the app loads to see if we crashed previously
+        function initResumeCheck() {
+            const session = RenderSession.check();
+            if (session) {
+                const container = document.getElementById('resume-container');
+                const text = document.getElementById('resume-text');
+
+                container.style.display = 'block';
+                text.innerText = `Previous render stopped at frame ${session.progress.current + 1} of ${session.progress.total}.`;
+
+                // Auto-fill the inputs to match the session (Visual feedback)
+                document.getElementById('frame-count-val').innerText = session.progress.total;
             }
         }
 

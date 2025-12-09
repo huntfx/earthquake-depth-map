@@ -1,0 +1,1 @@
+ffmpeg -i frame_%04d.png -vf "crop=min(iw\,ih):min(iw\,ih),fps=8,scale=480:480" -y video-480.gif
