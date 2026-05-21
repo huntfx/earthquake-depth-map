@@ -130,25 +130,3 @@ function calculateResponsiveCamera() {
     };
 }
 
-function saveRenderCamera() {
-    const camState = {
-        eye: currentCamera.eye,
-        center: currentCamera.center,
-        up: currentCamera.up
-    };
-    localStorage.setItem('earthquake_render_cam', JSON.stringify(camState));
-    console.log("Camera state saved:", camState);
-}
-
-function restoreRenderCamera() {
-    const saved = localStorage.getItem('earthquake_render_cam');
-    if (!saved) { alert("No saved camera position found."); return; }
-    try {
-        const camState = JSON.parse(saved);
-        currentCamera = camState;
-        Plotly.relayout('chart-container', { 'scene.camera': camState });
-        stopAutoRotate();
-    } catch (e) {
-        console.error("Failed to restore camera", e);
-    }
-}

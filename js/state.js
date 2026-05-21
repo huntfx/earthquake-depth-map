@@ -12,9 +12,6 @@ const BASE_PLATE_WIDTH = 4;
 
 const ROTATION_SPEED = -0.001;
 
-const WINDOW_ID = Math.random().toString(36).substr(2, 9);
-const RENDER_SESSION_KEY = `quake_render_session_${WINDOW_ID}`;
-
 // --- State ---
 let rawQuakeData = [];
 let rawVolcanoData = [];

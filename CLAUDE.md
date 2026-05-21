@@ -49,7 +49,8 @@ The camera/rotation system (`searchLocation`, `searchVolcano`, `searchZone`, GPS
 
 ## Known quirks
 - `render-btn` has two event listeners (one in `render.js` at top level, one inside `initApp` in `app.js`). This is preserved from the original code — do not deduplicate without checking behaviour.
-- `RENDER_SESSION_KEY` in `state.js` is defined but not currently used.
+- `render.js` crash-resume exists because the renderer has a memory leak on long runs — the session system lets the user restart mid-sequence without losing progress. Keep this in mind before simplifying it.
+- The timelapse system (`timelapse.js`) does not interact cleanly with the camera — it predates the camera refactor and has not been revisited.
 
 ## Stack
 - [Plotly.js 2.27.0](https://cdn.plot.ly/plotly-2.27.0.min.js) — loaded from CDN, available as global `Plotly`
