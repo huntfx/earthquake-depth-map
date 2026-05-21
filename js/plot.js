@@ -204,28 +204,16 @@ function updatePlot(isInitial = false) {
         i++;
     }
 
-    let colorSettings = {
+    const { cmin, cmax } = getColorRange(colorMode);
+    const colorSettings = {
         colorscale: selectedPalette,
+        cmin, cmax,
         colorbar: {
             x: 0, len: 0.5, thickness: 15,
-            titlefont: {color: isLightMode ? '#333' : 'white'},
-            tickfont: {color: isLightMode ? '#333' : 'white'}
+            titlefont: { color: isLightMode ? '#333' : 'white' },
+            tickfont:  { color: isLightMode ? '#333' : 'white' }
         }
     };
-
-    if (colorMode === 'depth') {
-        colorSettings.title = 'Depth (km)';
-        colorSettings.cmin = 0;
-        colorSettings.cmax = Math.ceil(stats.maxDepth / 100) * 100;
-    } else if (colorMode === 'mag') {
-        colorSettings.title = 'Magnitude';
-        colorSettings.cmin = 0;
-        colorSettings.cmax = 9;
-    } else {
-        colorSettings.title = 'Date';
-        colorSettings.cmin = stats.minTime;
-        colorSettings.cmax = stats.maxTime;
-    }
 
     const gridTrace = {
         type: 'scatter3d', mode: 'lines',

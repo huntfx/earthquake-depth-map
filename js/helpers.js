@@ -4,24 +4,30 @@ function getFrameCount() {
     return val > 0 ? val : 1;
 }
 
+// Base display size for a single quake, before any freshness/fade multiplier.
+// The cubic bonus above MIDPOINT gives large quakes a disproportionately bigger dot.
+const MIDPOINT = 1.618;
+function quakeBaseSize(q, baseSize, magBonusScale) {
+    let sizeFactor = q.mag;
+    if (q.mag > MIDPOINT) {
+        const diff = q.mag - MIDPOINT;
+        sizeFactor += Math.pow(diff, 3) * magBonusScale;
+    }
+    return baseSize * (sizeFactor / 2.5);
+}
+
+// Returns the colour scale bounds and label for the current colour mode.
+function getColorRange(colorMode) {
+    if (colorMode === 'depth') return { cmin: 0, cmax: Math.ceil(stats.maxDepth / 100) * 100, title: 'Depth (km)' };
+    if (colorMode === 'mag')   return { cmin: 0, cmax: 9, title: 'Magnitude' };
+    return { cmin: stats.minTime, cmax: stats.maxTime, title: 'Date' };
+}
+
 // --- Helper to calculate size array for renderer ---
 function calculateScaledSizes(multiplier) {
     const baseSize = parseFloat(document.getElementById('size-slider').value);
     const magBonusScale = parseFloat(document.getElementById('mag-slider').value);
-    const sizes = [];
-    const MIDPOINT = 1.618;
-
-    for (const q of rawQuakeData) {
-        let sizeFactor = q.mag;
-        if (q.mag > MIDPOINT) {
-            const diff = q.mag - MIDPOINT;
-            sizeFactor += (Math.pow(diff, 3) * magBonusScale);
-        }
-        // Apply multiplier to final size
-        const s = baseSize * (sizeFactor / 2.5) * multiplier;
-        sizes.push(s);
-    }
-    return sizes;
+    return rawQuakeData.map(q => quakeBaseSize(q, baseSize, magBonusScale) * multiplier);
 }
 
 // --- Global Error Helper ---
