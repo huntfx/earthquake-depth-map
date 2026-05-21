@@ -5,6 +5,81 @@ function toggleMenu() {
 document.getElementById('menu-btn').addEventListener('click', toggleMenu);
 document.getElementById('close-btn').addEventListener('click', toggleMenu);
 
+// Show the info popup for an earthquake or volcano, then shift the Plotly
+// camera center to face it — keeping the current eye position/zoom intact.
+function executeFlyTo(q) {
+    if (!q) return;
+
+    selectedQuake = q;
+
+    document.getElementById('qi-place').innerText = q.name || q.place;
+
+    const label1 = document.getElementById('qi-label-1');
+    const val1 = document.getElementById('qi-val-1');
+    const label2 = document.getElementById('qi-label-2');
+    const val2 = document.getElementById('qi-val-2');
+    const label3 = document.getElementById('qi-label-3');
+    const val3 = document.getElementById('qi-val-3');
+    const link = document.getElementById('qi-link');
+    const simBtn = document.getElementById('qi-sim-btn');
+
+    if (q.type === 'volcano') {
+        label1.innerText = "Type:";
+        val1.innerText = q.volcType;
+
+        label2.innerText = "Elevation:";
+        val2.innerText = q.elev + "m";
+
+        label3.innerText = "Status:";
+        val3.innerText = q.status;
+
+        link.style.display = 'none';
+        simBtn.style.display = 'none';
+    } else {
+        label1.innerText = "Magnitude:";
+        val1.innerText = q.realMag.toFixed(2);
+
+        label2.innerText = "Depth:";
+        val2.innerText = q.depth.toFixed(1) + " km";
+
+        label3.innerText = "Time:";
+        const d = new Date(q.time);
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        val3.innerText = dateStr;
+
+        if (q.url) {
+            link.href = q.url;
+            link.style.display = 'block';
+        } else {
+            link.style.display = 'none';
+        }
+        simBtn.style.display = 'block';
+    }
+
+    document.getElementById('quake-info').style.display = 'block';
+
+    // Shift camera center to the point's rendered position (depth-scaled for quakes).
+    let r_final = EARTH_RADIUS;
+    if (q.type === 'quake') r_final -= q.depth * parseFloat(document.getElementById('depth-slider').value);
+    if (q.type === 'volcano') r_final += (q.elev / 1000) * parseFloat(document.getElementById('depth-slider').value);
+
+    const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_final);
+    const newCenter = {
+        x: (x / EARTH_RADIUS) * PLOT_SCALE,
+        y: (y / EARTH_RADIUS) * PLOT_SCALE,
+        z: (z / EARTH_RADIUS) * PLOT_SCALE
+    };
+
+    const newCamera = {
+        eye: { ...currentCamera.eye },
+        center: newCenter,
+        up: { ...currentCamera.up }
+    };
+
+    currentCamera = newCamera;
+    Plotly.relayout('chart-container', { 'scene.camera': newCamera });
+}
+
 // --- Main App Logic ---
 async function initApp() {
     try {
@@ -200,45 +275,7 @@ async function initApp() {
 
             navigator.geolocation.getCurrentPosition(
                 (position) => {
-                    const lat = position.coords.latitude;
-                    const lon = position.coords.longitude;
-
-                    // Move Camera logic (copied/adapted from search)
-                    const [tx, ty, tz] = latLonToXYZ(lat, lon, EARTH_RADIUS);
-
-                    // Calculate normalized vector
-                    const len = Math.sqrt(tx*tx + ty*ty + tz*tz);
-                    const nx = tx / len;
-                    const ny = ty / len;
-                    const nz = tz / len;
-
-                    const PLOT_SCALE = 3000 / EARTH_RADIUS;
-                    const cx = (tx / EARTH_RADIUS) * PLOT_SCALE;
-                    const cy = (ty / EARTH_RADIUS) * PLOT_SCALE;
-                    const cz = (tz / EARTH_RADIUS) * PLOT_SCALE;
-
-                    const currentDist = Math.sqrt(currentCamera.eye.x**2 + currentCamera.eye.y**2 + currentCamera.eye.z**2);
-
-                    const newEye = {
-                        x: nx * currentDist,
-                        y: ny * currentDist,
-                        z: nz * currentDist
-                    };
-
-                    const newCenter = { x: cx, y: cy, z: cz };
-
-                    const newCameraSettings = {
-                        eye: newEye,
-                        center: newCenter,
-                        up: { x: 0, y: 0, z: 1 }
-                    };
-
-                    currentCamera = newCameraSettings;
-                    Plotly.relayout('chart-container', { 'scene.camera': newCameraSettings });
-
-                    // Stop rotation
-                    autoRotate = false;
-                    document.getElementById('rotate-btn').innerHTML = '▶';
+                    cameraGoTo(position.coords.latitude, position.coords.longitude, currentEyeDist());
                 },
                 (error) => {
                     console.warn("GPS Error:", error);
@@ -311,16 +348,7 @@ async function initApp() {
         // Simulate Button
         document.getElementById('qi-sim-btn').addEventListener('click', () => {
             if (selectedQuake) {
-                // SYNC CAMERA HERE
-                const graphDiv = document.getElementById('chart-container');
-                if (graphDiv._fullLayout && graphDiv._fullLayout.scene && graphDiv._fullLayout.scene.camera) {
-                    currentCamera = JSON.parse(JSON.stringify(graphDiv._fullLayout.scene.camera));
-                }
-
-                // Trigger the wave
                 triggerPulse(selectedQuake);
-
-                // Center camera on it (fixed jump issue)
                 executeFlyTo(selectedQuake);
             }
         });
@@ -349,17 +377,7 @@ async function initApp() {
 
         // --- INTERACTION LOGIC ---
         const graphDiv = document.getElementById('chart-container');
-        const stopRotation = () => {
-            // 1. Cancel the grace period timer if it's running
-            if (rotationTimeout) {
-                clearTimeout(rotationTimeout);
-                rotationTimeout = null;
-            }
-            // 2. Stop actual rotation
-            autoRotate = false;
-            // 3. Update UI to "Play" icon (meaning we are currently paused)
-            document.getElementById('rotate-btn').innerHTML = '▶';
-        };
+        const stopRotation = stopAutoRotate;
 
         // HANDSHAKE STATE
         // We separate the "Data Availability" (from Plotly) and the "Interaction Complete" (from DOM)
@@ -413,7 +431,7 @@ async function initApp() {
         });
 
         // 4. Pointer Up: The Trigger
-        graphDiv.addEventListener('pointerup', (e) => {
+        graphDiv.addEventListener('pointerup', () => {
             if (interactionState.isDragging) return; // It was a drag, ignore
 
             if (interactionState.pointData) {
@@ -428,125 +446,6 @@ async function initApp() {
             }
         }, {capture: true});
 
-        // Helper to perform the action
-        function executeFlyTo(q) {
-            if (!q) return;
-
-            // Store global selection
-            selectedQuake = q;
-
-            // Update Popup Content
-            document.getElementById('qi-place').innerText = q.name || q.place;
-
-            const label1 = document.getElementById('qi-label-1');
-            const val1 = document.getElementById('qi-val-1');
-            const label2 = document.getElementById('qi-label-2');
-            const val2 = document.getElementById('qi-val-2');
-            const label3 = document.getElementById('qi-label-3');
-            const val3 = document.getElementById('qi-val-3');
-            const link = document.getElementById('qi-link');
-            const simBtn = document.getElementById('qi-sim-btn');
-
-            if (q.type === 'volcano') {
-                label1.innerText = "Type:";
-                val1.innerText = q.volcType;
-
-                label2.innerText = "Elevation:";
-                val2.innerText = q.elev + "m";
-
-                label3.innerText = "Status:";
-                val3.innerText = q.status;
-
-                link.style.display = 'none';
-                simBtn.style.display = 'none'; // No wave simulation for volcanoes
-            } else {
-                label1.innerText = "Magnitude:";
-                val1.innerText = q.realMag.toFixed(2);
-
-                label2.innerText = "Depth:";
-                val2.innerText = q.depth.toFixed(1) + " km";
-
-                label3.innerText = "Time:";
-                // Fix popup time format here
-                const d = new Date(q.time);
-                const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-                val3.innerText = dateStr;
-
-                if (q.url) {
-                    link.href = q.url;
-                    link.style.display = 'block';
-                } else {
-                    link.style.display = 'none';
-                }
-                simBtn.style.display = 'block'; // Enable for quakes
-            }
-
-            document.getElementById('quake-info').style.display = 'block';
-
-            // Fly Camera
-            const PLOT_SCALE = 3000 / EARTH_RADIUS;
-            // For volcanoes, depth is 0 (or negative technically), but we use 0 offset here
-            // For quakes, we use depth slider
-            let r_final = EARTH_RADIUS;
-            if(q.type === 'quake') {
-                r_final -= (q.depth * parseFloat(document.getElementById('depth-slider').value));
-            }
-            if(q.type === 'volcano') {
-                r_final += (q.elev / 1000 * parseFloat(document.getElementById('depth-slider').value));
-            }
-
-            const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_final);
-
-            // Apply Plot Scale
-            const scx = (x / EARTH_RADIUS) * PLOT_SCALE;
-            const scy = (y / EARTH_RADIUS) * PLOT_SCALE;
-            const scz = (z / EARTH_RADIUS) * PLOT_SCALE;
-
-            const newCenter = { x: scx, y: scy, z: scz };
-
-            const newCamera = {
-                eye: { ...currentCamera.eye }, // Keep zoom level
-                center: newCenter, // Look at point
-                up: { ...currentCamera.up }
-            };
-
-            currentCamera = newCamera;
-            Plotly.relayout('chart-container', { 'scene.camera': newCamera });
-        }
-
-        // Helper: Trigger the pulse animation given a quake object
-        function triggerPulse(q) {
-            if (!q || q.type === 'volcano') return;
-
-            // Calculate Felt Radius based on Magnitude
-            // Exponential scale: roughly M4=140km, M5=280km, M7=1000km, M9=4000km
-            // Ensure visible minimum for small quakes
-            const animMaxRadius = Math.max(500, Math.exp(q.realMag / 1.5) * 20);
-
-            // Initialize Pulse Animation State
-            // Store origin LAT/LON to calculate the circle correctly on sphere surface
-            pulseState = {
-                startTime: performance.now(),
-                lat: q.lat,
-                lon: q.lon,
-                maxRadius: animMaxRadius
-            };
-        }
-
-        function getSafeCamera(layoutScene) {
-            if (!layoutScene || !layoutScene.camera) return null;
-
-            const cam = layoutScene.camera;
-            return {
-                // If 'eye' is missing, use default zoom (1.5)
-                eye: cam.eye ? { ...cam.eye } : { x: 1.5, y: 1.5, z: 1.5 },
-                // If 'center' is missing, it means 0,0,0 (Plotly deletes it to save memory)
-                center: cam.center ? { ...cam.center } : { x: 0, y: 0, z: 0 },
-                // If 'up' is missing, it means Z-axis is up
-                up: cam.up ? { ...cam.up } : { x: 0, y: 0, z: 1 }
-            };
-        }
-
         // --- EVENT BASED CAMERA TRACKING ---
         // This keeps currentCamera up-to-date passively.
         // We use this INSTEAD of querying _fullLayout inside click handlers.
@@ -560,20 +459,20 @@ async function initApp() {
                     up: cam.up ? { ...cam.up } : currentCamera.up
                 };
             }
-            // Case 2: Partial updates (e.g. dragging updates just one axis)
-            // We iterate over keys to catch things like 'scene.camera.eye.x'
+            // Case 2: Partial updates — handles both:
+            //   'scene.camera.eye'   → full sub-object { x, y, z }
+            //   'scene.camera.eye.x' → single axis value
             else {
-                let changed = false;
                 Object.keys(eventData).forEach(key => {
                     if (key.startsWith('scene.camera.')) {
-                        // Determine which part (eye, center, up)
-                        const parts = key.split('.'); // ['scene', 'camera', 'eye', 'x']
+                        const parts = key.split('.');
                         const category = parts[2]; // 'eye', 'center', or 'up'
-                        const axis = parts[3];     // 'x', 'y', or 'z'
-
-                        if (category && axis && currentCamera[category]) {
+                        const axis = parts[3];     // 'x'/'y'/'z', or undefined for sub-object
+                        if (!category) return;
+                        if (axis && currentCamera[category]) {
                             currentCamera[category][axis] = eventData[key];
-                            changed = true;
+                        } else if (!axis && eventData[key] && typeof eventData[key] === 'object') {
+                            currentCamera[category] = { ...eventData[key] };
                         }
                     }
                 });

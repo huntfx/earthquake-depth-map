@@ -1,3 +1,16 @@
+// Initialise the pulse animation for a clicked earthquake.
+function triggerPulse(q) {
+    if (!q || q.type === 'volcano') return;
+    // Exponential scale: roughly M4=140km, M5=280km, M7=1000km, M9=4000km
+    const animMaxRadius = Math.max(500, Math.exp(q.realMag / 1.5) * 20);
+    pulseState = {
+        startTime: performance.now(),
+        lat: q.lat,
+        lon: q.lon,
+        maxRadius: animMaxRadius
+    };
+}
+
 // Helper function to generate circle points on sphere
 function getCirclePoints(lat, lon, radiusKm) {
     const points = { x: [], y: [], z: [] };
@@ -62,8 +75,12 @@ function animateGlobe() {
 
         currentCamera.eye = newEye;
 
+        // Send the full camera object so _fullLayout.scene.camera stays in sync.
+        // A partial 'scene.camera.eye' key bypasses the plotly_relayout handler's
+        // Case 1 path and leaves Plotly's stored camera stale, causing a 1-frame
+        // snap whenever the next action reads it.
         Plotly.relayout('chart-container', {
-            'scene.camera.eye': newEye
+            'scene.camera': { eye: newEye, center: currentCenter, up: currentCamera.up }
         });
     }
 

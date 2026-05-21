@@ -12,12 +12,12 @@ js/
   audio.js          Web Audio synthesis
   mapdata.js        latLonToXYZ + GeoJSON/CSV processing for borders, plates, volcanoes, grid
   helpers.js        calculateScaledSizes, showError, setDefaultDates, applyPreset, updateLabels
-  camera.js         searchLocation/Volcano/Zone, calculateResponsiveCamera, save/restoreRenderCamera
+  camera.js         PLOT_SCALE constant, stopAutoRotate, currentEyeDist, cameraGoTo, searchLocation/Volcano/Zone, calculateResponsiveCamera
   render.js         RenderSession (crash-resume), renderFrames, resumeRender
   timelapse.js      startTimeLapse, stopTimeLapse, updateTimeLapseFrame + timelapse event listeners
   plot.js           fetchDataAndPlot, updatePlot (builds all 11 Plotly traces)
-  animation.js      animateGlobe (rAF loop), getCirclePoints (pulse wave)
-  app.js            initApp, initResumeCheck, all remaining UI event listeners
+  animation.js      triggerPulse, animateGlobe (rAF loop), getCirclePoints (pulse wave)
+  app.js            executeFlyTo (top-level), initApp, initResumeCheck, all remaining UI event listeners
 ```
 
 Scripts are loaded as plain `<script>` tags in dependency order — **not ES modules**. All functions and state are global. This is intentional to avoid breaking cross-file references.
@@ -39,12 +39,16 @@ Scripts are loaded as plain `<script>` tags in dependency order — **not ES mod
 ```
 
 ## Critical: camera logic is brittle
-The camera/rotation system (`searchLocation`, `searchVolcano`, `searchZone`, GPS handler, `animateGlobe` rotation, `plotly_relayout` tracking, and `executeFlyTo` inside `initApp`) is known to be fragile. It works correctly but has broken repeatedly when modified, even when changes seemed unrelated. **Do not refactor camera logic without explicit instruction.** If asked to refactor it, treat it as a dedicated task.
+The camera/rotation system (`searchLocation`, `searchVolcano`, `searchZone`, GPS handler, `animateGlobe` rotation, `plotly_relayout` tracking, and `executeFlyTo`) is known to be fragile. It works correctly but has broken repeatedly when modified, even when changes seemed unrelated. **Do not refactor camera logic without explicit instruction.** If asked to refactor it, treat it as a dedicated task.
+
+### Camera state rules (learned from debugging)
+- **`currentCamera` is the authoritative camera state.** It is a plain JS object maintained by the `plotly_relayout` event handler in `app.js`. Always read from it, never from Plotly internals.
+- **Do not read from `_fullLayout.scene.camera` for live state.** Plotly only updates `_fullLayout.scene.camera` on programmatic `Plotly.relayout`/`Plotly.react` calls — it is NOT updated when the user manually orbits or zooms the scene. Reading it will silently return a stale camera, causing jumps.
+- **Always send a full camera object to `Plotly.relayout`.** Passing a partial key like `'scene.camera.eye'` (instead of `'scene.camera'`) bypasses the `plotly_relayout` handler's Case 1 path and leaves `_fullLayout.scene.camera` stale. The animation loop (`animateGlobe`) does this correctly — don't change it back to a partial key.
+- **`executeFlyTo` and `cameraGoTo` have different behaviours** — `cameraGoTo` reorients the globe to face the location; `executeFlyTo` only shifts the center (look-at point) while keeping eye fixed. They must remain separate.
 
 ## Known quirks
 - `render-btn` has two event listeners (one in `render.js` at top level, one inside `initApp` in `app.js`). This is preserved from the original code — do not deduplicate without checking behaviour.
-- `stopRotation` is a closure defined inside `initApp` — intentional, it's only used within that scope.
-- `saveRenderCamera` / `restoreRenderCamera` in `camera.js` are not wired to any UI button — they're debug utilities.
 - `RENDER_SESSION_KEY` in `state.js` is defined but not currently used.
 
 ## Stack
