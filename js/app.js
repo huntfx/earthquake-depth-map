@@ -206,9 +206,6 @@ function setupControls() {
         }, 1000);
     });
 
-    // Render frames (see also render.js which adds a second listener — preserved intentionally)
-    document.getElementById('render-btn').addEventListener('click', renderFrames);
-
     // GPS
     document.getElementById('gps-btn').addEventListener('click', () => {
         if (!navigator.geolocation) {

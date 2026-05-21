@@ -48,7 +48,6 @@ The camera/rotation system (`searchLocation`, `searchVolcano`, `searchZone`, GPS
 - **`executeFlyTo` and `cameraGoTo` have different behaviours** — `cameraGoTo` reorients the globe to face the location; `executeFlyTo` only shifts the center (look-at point) while keeping eye fixed. They must remain separate.
 
 ## Known quirks
-- `render-btn` has two event listeners (one in `render.js` at top level, one inside `initApp` in `app.js`). This is preserved from the original code — do not deduplicate without checking behaviour.
 - `render.js` crash-resume exists because the renderer has a memory leak on long runs — the session system lets the user restart mid-sequence without losing progress. Keep this in mind before simplifying it.
 - The timelapse system (`timelapse.js`) does not touch auto-rotation state — it runs alongside whatever the globe is already doing.
 
