@@ -46,8 +46,10 @@ function snapToScale(freq) {
         }
     }
 
-    // Convert back to frequency
-    return baseFreq * Math.pow(2, (bestMidi - 69) / 12);
+    return {
+        freq: baseFreq * Math.pow(2, (bestMidi - 69) / 12),
+        midi: bestMidi
+    };
 }
 
 function playQuakeSound(q, delay = 0) {
@@ -86,8 +88,7 @@ function playQuakeSound(q, delay = 0) {
 
     // Safety Cap: Minimum 30Hz to avoid sub-sonic issues, snap to scale
     freq = Math.max(20, freq);
-    freq = snapToScale(freq);
-    osc.frequency.value = freq;
+    osc.frequency.value = snapToScale(freq).freq;
 
     // Volume: Exponential curve (Power 3)
     // Mag 3 ~ very quiet, Mag 8 ~ loud
