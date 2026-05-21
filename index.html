@@ -55,9 +55,9 @@
         <div class="tl-row">
             <input type="range" id="tl-scrubber" min="0" max="100" value="0">
         </div>
-        <div class="tl-row" style="font-size: 11px; color: #888; justify-content: flex-start;">
-             <label style="display:inline; margin-right:5px; margin-bottom:0;">Trail:</label>
-             <select id="tl-window" class="tl-select" style="width: auto;">
+        <div class="tl-row tl-options-row">
+             <label class="tl-trail-label">Trail:</label>
+             <select id="tl-window" class="tl-select tl-window-select">
                 <option value="86400000">1 Day</option>
                 <option value="172800000">2 Days</option>
                 <option value="345600000" selected>4 Days</option>
@@ -65,15 +65,15 @@
              </select>
 
              <!-- POP TOGGLE -->
-             <div style="margin-left: 15px; display: flex; align-items: center;">
-                <input type="checkbox" id="tl-pop-check" checked style="width: 14px; height: 14px; margin-right: 5px; accent-color: cyan;">
-                <label for="tl-pop-check" style="margin:0; cursor:pointer;">Pop In Animation</label>
+             <div class="tl-toggle">
+                <input type="checkbox" id="tl-pop-check" checked>
+                <label for="tl-pop-check">Pop In Animation</label>
              </div>
 
              <!-- SOUND TOGGLE -->
-             <div style="margin-left: 15px; display: flex; align-items: center;">
-                <input type="checkbox" id="tl-sound-check" style="width: 14px; height: 14px; margin-right: 5px; accent-color: cyan;">
-                <label for="tl-sound-check" style="margin:0; cursor:pointer;">Sound</label>
+             <div class="tl-toggle">
+                <input type="checkbox" id="tl-sound-check">
+                <label for="tl-sound-check">Sound</label>
              </div>
         </div>
     </div>
@@ -228,21 +228,17 @@
         </div>
         <h3>Render Frames</h3>
 
-        <div id="resume-container" style="display:none; margin-bottom: 15px; padding: 10px; background: #331111; border: 1px solid #ff4444; border-radius: 4px;">
-            <div style="color: #ff8888; font-size: 11px; margin-bottom: 5px; font-weight: bold;">CRASH DETECTED</div>
-            <div style="color: #ddd; font-size: 11px; margin-bottom: 8px;" id="resume-text">
-                Incomplete render found (Frame 594 of 1024).
-            </div>
-            <button id="resume-btn" style="width: 100%; background: #ff4444; color: white; border: none; padding: 8px; border-radius: 3px; cursor: pointer; font-weight: bold; text-transform: uppercase;">
-                Resume Previous Render
-            </button>
+        <div id="resume-container">
+            <div id="resume-header">CRASH DETECTED</div>
+            <div id="resume-text">Incomplete render found (Frame 594 of 1024).</div>
+            <button id="resume-btn">Resume Previous Render</button>
         </div>
 
         <div class="control-group">
             <label>Filename & Format</label>
-            <div style="display:flex; gap:5px;">
-                <input type="text" id="filename-pattern" value="frame_####" style="flex:2;">
-                <select id="render-format" style="flex:1;">
+            <div class="render-file-row">
+                <input type="text" id="filename-pattern" value="frame_####">
+                <select id="render-format">
                     <option value="png" selected>.png</option>
                     <option value="jpeg">.jpg</option>
                     <option value="webp">.webp</option>
@@ -252,9 +248,9 @@
 
         <div class="control-group">
             <label>Frame Count</label>
-            <div style="display:flex; gap:10px; align-items: center;">
-                <input type="range" id="frame-slider" min="1" max="1024" step="1" value="250" style="flex:2">
-                <input type="number" id="frame-number" value="360" min="1" style="width: 70px; flex:1; text-align:right;">
+            <div class="render-frame-row">
+                <input type="range" id="frame-slider" min="1" max="1024" step="1" value="250">
+                <input type="number" id="frame-number" value="360" min="1">
             </div>
         </div>
 
