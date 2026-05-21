@@ -138,9 +138,6 @@ document.getElementById('tl-sound-check').addEventListener('change', (e) => {
 });
 
 document.getElementById('tl-scrubber').addEventListener('input', (e) => {
-    tlState.playing = false;
-    document.getElementById('tl-play-btn').innerText = '▶';
-
     const percent = parseFloat(e.target.value);
     tlState.currentTime = tlState.startTime + (tlState.endTime - tlState.startTime) * (percent / 100);
     tlState.lastSoundTime = tlState.currentTime;
