@@ -46,6 +46,52 @@ function getCirclePoints(lat, lon, radiusKm) {
     return points;
 }
 
+function tickTimeLapse() {
+    const now = performance.now();
+
+    tlState.currentTime += tlState.speed / 60;
+
+    if (tlState.currentTime >= tlState.endTime) {
+        tlState.currentTime = tlState.startTime;
+        tlState.lastSoundTime = tlState.startTime;
+    }
+
+    document.getElementById('tl-date-display').innerText =
+        new Date(tlState.currentTime).toISOString().slice(0, 16).replace('T', ' ');
+    document.getElementById('tl-scrubber').value =
+        ((tlState.currentTime - tlState.startTime) / (tlState.endTime - tlState.startTime)) * 100;
+
+    if (tlState.soundEnabled) {
+        let checkTime = tlState.lastSoundTime;
+        if (tlState.currentTime < tlState.lastSoundTime) {
+            checkTime = tlState.startTime - 1000;
+            tlState.lastSoundTime = checkTime;
+        }
+
+        const newQuakes = tlState.sortedData.filter(q =>
+            q.time > checkTime && q.time <= tlState.currentTime
+        );
+
+        if (newQuakes.length > 0) {
+            newQuakes.sort((a, b) => b.realMag - a.realMag);
+            const simDuration = tlState.currentTime - checkTime;
+            let delay = 0;
+            if (simDuration > 0) {
+                const quakeOffset = newQuakes[0].time - checkTime;
+                delay = (quakeOffset / simDuration) * (1 / 60);
+            }
+            playQuakeSound(newQuakes[0], delay);
+        }
+
+        tlState.lastSoundTime = tlState.currentTime;
+    }
+
+    if (now - tlState.lastDrawTime > tlState.drawInterval) {
+        updateTimeLapseFrame();
+        tlState.lastDrawTime = now;
+    }
+}
+
 function animateGlobe() {
     const graphDiv = document.getElementById('chart-container');
     const scene = graphDiv._fullLayout ? graphDiv._fullLayout.scene : null;
@@ -127,70 +173,8 @@ function animateGlobe() {
         }
     }
 
-    // --- TIMELAPSE LOGIC IN ANIMATION FRAME ---
     if (tlState.active && tlState.playing) {
-        const now = performance.now();
-
-        // Advance Time
-        // Note: We advance time every frame for smooth scrubber/UI updates
-        tlState.currentTime += tlState.speed / 60; // Assuming ~60fps, divide speed
-
-        if (tlState.currentTime >= tlState.endTime) {
-            // LOOP BACK
-            tlState.currentTime = tlState.startTime;
-            // Also reset sound tracker
-            tlState.lastSoundTime = tlState.startTime;
-        }
-
-        // Update UI every frame
-        const dateObj = new Date(tlState.currentTime);
-        document.getElementById('tl-date-display').innerText = dateObj.toISOString().slice(0, 16).replace('T', ' ');
-
-        const percent = ((tlState.currentTime - tlState.startTime) / (tlState.endTime - tlState.startTime)) * 100;
-        document.getElementById('tl-scrubber').value = percent;
-
-        // AUDIO LOGIC (Decoupled from visual draw)
-        if (tlState.soundEnabled) {
-             // Ensure we don't miss the first quake by checking against startTime - small buffer if lastSoundTime reset
-             let checkTime = tlState.lastSoundTime;
-             if (tlState.currentTime < tlState.lastSoundTime) {
-                 // Looped
-                 checkTime = tlState.startTime - 1000; // Look slightly before start to catch t=minTime quakes
-                 tlState.lastSoundTime = checkTime;
-             }
-
-             const newQuakes = tlState.sortedData.filter(q =>
-                 q.time > checkTime && q.time <= tlState.currentTime
-             );
-
-             if (newQuakes.length > 0) {
-                 // Prioritize by Real Magnitude (Largest First)
-                 newQuakes.sort((a, b) => b.realMag - a.realMag);
-                 const limit = 1; // Limit to 1 per frame to prevent clipping/muddy audio
-                 const count = Math.min(newQuakes.length, limit);
-
-                 // Calculate timing offset within this frame based on simulation duration
-                 const simDuration = tlState.currentTime - checkTime;
-
-                 for(let k=0; k < count; k++) {
-                     let delay = 0;
-                     if (simDuration > 0) {
-                         const quakeOffset = newQuakes[k].time - checkTime;
-                         const relativePos = quakeOffset / simDuration;
-                         // Map relative position (0..1) to frame duration (approx 16ms)
-                         delay = relativePos * (1/60);
-                     }
-                     playQuakeSound(newQuakes[k], delay);
-                 }
-             }
-             tlState.lastSoundTime = tlState.currentTime;
-        }
-
-        // THROTTLE CHART UPDATES (Critical for performance)
-        if (now - tlState.lastDrawTime > tlState.drawInterval) {
-            updateTimeLapseFrame();
-            tlState.lastDrawTime = now;
-        }
+        tickTimeLapse();
     }
 
     requestAnimationFrame(animateGlobe);
