@@ -25,22 +25,17 @@ function snapToScale(freq) {
     // Find closest valid note by checking neighbors
     // We check current note, then +1/-1, +2/-2, etc.
     let bestMidi = midi;
-    let found = false;
 
     for (let offset = 0; offset < 6; offset++) {
-        // Check +offset
-        let m1 = midi + offset;
+        const m1 = midi + offset;
         if (allowedPitchClasses.includes((m1 % 12 + 12) % 12)) {
             bestMidi = m1;
-            found = true;
             break;
         }
-        // Check -offset
         if (offset > 0) {
-            let m2 = midi - offset;
+            const m2 = midi - offset;
             if (allowedPitchClasses.includes((m2 % 12 + 12) % 12)) {
                 bestMidi = m2;
-                found = true;
                 break;
             }
         }
