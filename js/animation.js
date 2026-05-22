@@ -158,6 +158,7 @@ function animateGlobe() {
             // RGBA Color String for proper opacity handling
             const colorString = `rgba(255, 255, 255, ${opacity.toFixed(2)})`;
 
+            syncSceneCamera();
             Plotly.restyle('chart-container', {
                 'x': [circle.x],
                 'y': [circle.y],
@@ -168,6 +169,7 @@ function animateGlobe() {
             }, [10]);
         } else {
             // Animation Complete - Ensure it's fully transparent/hidden
+            syncSceneCamera();
             Plotly.restyle('chart-container', {'visible': false}, [10]);
             pulseState = null;
         }

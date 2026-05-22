@@ -23,11 +23,22 @@ function getLiveCamera() {
     return { eye: { ...currentCamera.eye }, center: { ...currentCamera.center }, up: { ...currentCamera.up } };
 }
 
+// Writes the live WebGL camera into _fullLayout.scene.camera so any immediately
+// following Plotly.restyle uses the correct position and doesn't snap the view.
+function syncSceneCamera() {
+    const gd = document.getElementById('chart-container');
+    const lc = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene.camera;
+    if (!lc) return;
+    const live = getLiveCamera();
+    lc.eye    = { ...live.eye };
+    lc.center = { ...live.center };
+    lc.up     = { ...live.up };
+}
+
 // Returns the current eye-to-origin distance, used to preserve zoom when navigating.
 function currentEyeDist() {
-    return Math.sqrt(
-        currentCamera.eye.x ** 2 + currentCamera.eye.y ** 2 + currentCamera.eye.z ** 2
-    );
+    const cam = getLiveCamera();
+    return Math.sqrt(cam.eye.x ** 2 + cam.eye.y ** 2 + cam.eye.z ** 2);
 }
 
 // Move the camera to face a lat/lon surface point at the given zoom distance.

@@ -286,10 +286,7 @@ function setupControls() {
 
     // Simulate wave
     document.getElementById('qi-sim-btn').addEventListener('click', () => {
-        if (selectedQuake) {
-            triggerPulse(selectedQuake);
-            executeFlyTo(selectedQuake);
-        }
+        if (selectedQuake) triggerPulse(selectedQuake);
     });
 
     // Search — Zones
@@ -329,6 +326,26 @@ function setupControls() {
 function setupInteraction() {
     const graphDiv = document.getElementById('chart-container');
 
+    // Pause timelapse playback during camera interaction and resume when done.
+    let _tlPausedForInteraction = false;
+    let _wheelResumeTimer = null;
+
+    function _pauseTL() {
+        if (tlState.active && tlState.playing) {
+            tlState.playing = false;
+            _tlPausedForInteraction = true;
+            document.getElementById('tl-play-btn').innerText = '▶';
+        }
+    }
+
+    function _resumeTL() {
+        if (_tlPausedForInteraction) {
+            tlState.playing = true;
+            _tlPausedForInteraction = false;
+            document.getElementById('tl-play-btn').innerText = '❚❚';
+        }
+    }
+
     // HANDSHAKE STATE
     // We separate the "Data Availability" (from Plotly) and the "Interaction Complete" (from DOM)
     let interactionState = {
@@ -339,24 +356,11 @@ function setupInteraction() {
         awaitingData: false
     };
 
-    document.addEventListener('pointerup', () => {
-        if (!_globePointerDown) return;
-        const wasPaused = _tlPausedForDrag;
-        _tlPausedForDrag = false;
-        // Defer one macrotask so Plotly's drag-end plotly_relayout fires before we sync.
-        setTimeout(() => {
-            _syncAndResume(document.getElementById('chart-container'), wasPaused);
-        }, 0);
-    });
-
     graphDiv.addEventListener('pointerdown', (e) => {
+        clearTimeout(_wheelResumeTimer);
+        _wheelResumeTimer = null;
+        _pauseTL();
         stopAutoRotate();
-        _globePointerDown = true;
-        if (tlState.active && tlState.playing) {
-            tlState.playing = false;
-            _tlPausedForDrag = true;
-            document.getElementById('tl-play-btn').innerText = '▶';
-        }
         const panel = document.getElementById('side-panel');
         if (panel.classList.contains('open')) {
             panel.classList.remove('open');
@@ -386,6 +390,7 @@ function setupInteraction() {
     });
 
     graphDiv.addEventListener('pointerup', () => {
+        _resumeTL();
         if (interactionState.isDragging) return;
         if (interactionState.pointData) {
             executeFlyTo(interactionState.pointData);
@@ -422,57 +427,18 @@ function setupInteraction() {
             });
         }
 
-        // When wheel-zooming, debounce on camera-change events so we resume only
-        // after Plotly's zoom easing animation has fully settled.
-        if (_wheelZooming) {
-            clearTimeout(_zoomSettleTimeout);
-            _zoomSettleTimeout = setTimeout(_resumeAfterZoom, 150);
-        }
     });
 
     graphDiv.addEventListener('touchstart', stopAutoRotate);
-
-    let _wheelFallbackTimeout = null;
-    let _zoomSettleTimeout    = null;
-    let _wheelZooming         = false;
-
-    function _syncAndResume(gd, wasPaused) {
-        const lc  = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene.camera;
-        const src = getLiveCamera(); // always returns a full camera object
-        currentCamera = { eye: { ...src.eye }, center: { ...src.center }, up: { ...src.up } };
-        if (lc) {
-            lc.eye    = { ...src.eye };
-            lc.center = { ...src.center };
-            lc.up     = { ...src.up };
-        }
-        _globePointerDown = false;
-        if (wasPaused) {
-            tlState.playing = true;
-            document.getElementById('tl-play-btn').innerText = '❚❚';
-        }
-    }
-
-    function _resumeAfterZoom() {
-        clearTimeout(_wheelFallbackTimeout);
-        clearTimeout(_zoomSettleTimeout);
-        _wheelZooming = false;
-        const wasPaused = _tlPausedForDrag;
-        _tlPausedForDrag = false;
-        _syncAndResume(document.getElementById('chart-container'), wasPaused);
-    }
-
     graphDiv.addEventListener('wheel', () => {
         stopAutoRotate();
-        if (tlState.active && tlState.playing) {
-            tlState.playing = false;
-            _tlPausedForDrag = true;
-            document.getElementById('tl-play-btn').innerText = '▶';
-        }
-        _globePointerDown = true;
-        _wheelZooming = true;
-        clearTimeout(_wheelFallbackTimeout);
-        _wheelFallbackTimeout = setTimeout(_resumeAfterZoom, 800);
-    });
+        _pauseTL();
+        clearTimeout(_wheelResumeTimer);
+        // Sync camera in a microtask so it runs after Plotly's zoom handler has
+        // updated the WebGL camera — prevents a pending restyle from snapping back.
+        Promise.resolve().then(syncSceneCamera);
+        _wheelResumeTimer = setTimeout(_resumeTL, 300);
+    }, { capture: true });
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {

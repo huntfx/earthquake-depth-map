@@ -200,15 +200,17 @@ async function renderFrames(isResume = false, sessionData = null, preLoadedHandl
     const baseRenderSize = parseFloat(document.getElementById('size-slider').value);
     const originalLabelSize = document.getElementById('labels-checkbox').checked ? 12 : 0;
 
+    syncSceneCamera();
     await Plotly.restyle(graphDiv, { 'marker.showscale': false, 'marker.size': [calculateScaledSizes(visualMultiplier)] }, [8]);
     await Plotly.restyle(graphDiv, { 'marker.size': baseRenderSize * 2.0 * visualMultiplier }, [5]);
     await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH * visualMultiplier }, [2]);
     await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH * visualMultiplier }, [3]);
     await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize * visualMultiplier }, [4]);
 
-    const startEye    = { ...currentCamera.eye };
-    const startUp     = { ...currentCamera.up };
-    const startCenter = currentCamera.center || { x: 0, y: 0, z: 0 };
+    const startCam    = getLiveCamera();
+    const startEye    = startCam.eye;
+    const startUp     = startCam.up;
+    const startCenter = startCam.center || { x: 0, y: 0, z: 0 };
     const dx = startEye.x - startCenter.x;
     const dy = startEye.y - startCenter.y;
     const dz = startEye.z - startCenter.z;

@@ -23,9 +23,10 @@ async function startTimeLapse() {
     // baseline rather than snapping back to its previous interaction state.
     await Plotly.relayout('chart-container', {
         'uirevision': Date.now().toString(),
-        'scene.camera': { eye: { ...currentCamera.eye }, center: { ...currentCamera.center }, up: { ...currentCamera.up } }
+        'scene.camera': getLiveCamera()
     });
 
+    syncSceneCamera();
     await Plotly.restyle('chart-container', { visible: false }, [6, 9]);
     await updateTimeLapseFrame();
 }
@@ -94,11 +95,9 @@ function updateTimeLapseFrame() {
         }
     }
 
-    // Skip the restyle while the user is holding the pointer on the globe.
-    // Plotly.restyle re-applies _fullLayout.scene.camera (stale during drag) to
-    // the WebGL camera, snapping the view. Pausing updates for the drag duration
-    // is imperceptible; data resumes on pointerup.
-    if (_globePointerDown) return Promise.resolve();
+    // Sync _fullLayout.scene.camera to the live WebGL position so the restyle
+    // re-applies exactly what's already on screen — no snap.
+    syncSceneCamera();
 
     return Plotly.restyle('chart-container', {
         x: [qx], y: [qy], z: [qz],

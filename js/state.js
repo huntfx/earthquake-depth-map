@@ -48,8 +48,6 @@ let currentCamera = {
 let autoRotate = true;
 let isLightMode = false;
 let rotationTimeout = null;
-let _globePointerDown = false;  // true while pointer is held on the globe
-let _tlPausedForDrag  = false;  // true if we paused the timelapse due to a drag
 
 // --- Time Lapse State ---
 let tlState = {
