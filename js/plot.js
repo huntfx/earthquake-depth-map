@@ -422,5 +422,6 @@ function updatePlot(isInitial = false) {
         quakeTrace, ghostTrace, pulseTrace
     ], layout, {responsive: true});
 
+    invalidateMagChart();
     drawMagChart();
 }

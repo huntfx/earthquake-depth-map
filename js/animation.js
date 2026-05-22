@@ -175,6 +175,7 @@ function animateGlobe() {
 
     if (tlState.active && tlState.playing) {
         tickTimeLapse();
+        drawMagChart();
     }
 
     requestAnimationFrame(animateGlobe);

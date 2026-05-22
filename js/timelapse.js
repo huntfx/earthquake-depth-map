@@ -106,8 +106,6 @@ function updateTimeLapseFrame() {
         'marker.colorbar.tickvals': tickvals,
         'marker.colorbar.ticktext': ticktext
     }, [8]);
-
-    drawMagChart();
 }
 
 // --- Event Listeners ---

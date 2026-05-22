@@ -149,7 +149,7 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(4px);
     z-index: 999;
-    display: none;
+    display: block;
     box-sizing: border-box;
 }
 #mag-chart-header {
