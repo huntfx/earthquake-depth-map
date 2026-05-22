@@ -70,11 +70,8 @@ function executeFlyTo(q) {
         z: (z / EARTH_RADIUS) * PLOT_SCALE
     };
 
-    const newCamera = {
-        eye: { ...currentCamera.eye },
-        center: newCenter,
-        up: { ...currentCamera.up }
-    };
+    const liveCam   = getLiveCamera();
+    const newCamera = { eye: { ...liveCam.eye }, center: newCenter, up: { ...liveCam.up } };
 
     currentCamera = newCamera;
     Plotly.relayout('chart-container', { 'scene.camera': newCamera });
@@ -346,22 +343,9 @@ function setupInteraction() {
         if (!_globePointerDown) return;
         const wasPaused = _tlPausedForDrag;
         _tlPausedForDrag = false;
-        // Defer by one macrotask so Plotly's drag-end plotly_relayout fires first,
-        // updating currentCamera before we sync _fullLayout.scene.camera and
-        // re-enable restyles (otherwise the first restyle snaps to the old position).
+        // Defer one macrotask so Plotly's drag-end plotly_relayout fires before we sync.
         setTimeout(() => {
-            const gd = document.getElementById('chart-container');
-            const lc = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene.camera;
-            if (lc) {
-                lc.eye    = { ...currentCamera.eye };
-                lc.center = { ...currentCamera.center };
-                lc.up     = { ...currentCamera.up };
-            }
-            _globePointerDown = false;
-            if (wasPaused) {
-                tlState.playing = true;
-                document.getElementById('tl-play-btn').innerText = '❚❚';
-            }
+            _syncAndResume(document.getElementById('chart-container'), wasPaused);
         }, 0);
     });
 
@@ -437,11 +421,46 @@ function setupInteraction() {
                 }
             });
         }
+
+        // When wheel-zooming, debounce on camera-change events so we resume only
+        // after Plotly's zoom easing animation has fully settled.
+        if (_wheelZooming) {
+            clearTimeout(_zoomSettleTimeout);
+            _zoomSettleTimeout = setTimeout(_resumeAfterZoom, 150);
+        }
     });
 
     graphDiv.addEventListener('touchstart', stopAutoRotate);
 
-    let _wheelResumeTimeout = null;
+    let _wheelFallbackTimeout = null;
+    let _zoomSettleTimeout    = null;
+    let _wheelZooming         = false;
+
+    function _syncAndResume(gd, wasPaused) {
+        const lc  = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene.camera;
+        const src = getLiveCamera(); // always returns a full camera object
+        currentCamera = { eye: { ...src.eye }, center: { ...src.center }, up: { ...src.up } };
+        if (lc) {
+            lc.eye    = { ...src.eye };
+            lc.center = { ...src.center };
+            lc.up     = { ...src.up };
+        }
+        _globePointerDown = false;
+        if (wasPaused) {
+            tlState.playing = true;
+            document.getElementById('tl-play-btn').innerText = '❚❚';
+        }
+    }
+
+    function _resumeAfterZoom() {
+        clearTimeout(_wheelFallbackTimeout);
+        clearTimeout(_zoomSettleTimeout);
+        _wheelZooming = false;
+        const wasPaused = _tlPausedForDrag;
+        _tlPausedForDrag = false;
+        _syncAndResume(document.getElementById('chart-container'), wasPaused);
+    }
+
     graphDiv.addEventListener('wheel', () => {
         stopAutoRotate();
         if (tlState.active && tlState.playing) {
@@ -450,22 +469,9 @@ function setupInteraction() {
             document.getElementById('tl-play-btn').innerText = '▶';
         }
         _globePointerDown = true;
-        clearTimeout(_wheelResumeTimeout);
-        _wheelResumeTimeout = setTimeout(() => {
-            const gd = document.getElementById('chart-container');
-            const lc = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene.camera;
-            if (lc) {
-                lc.eye    = { ...currentCamera.eye };
-                lc.center = { ...currentCamera.center };
-                lc.up     = { ...currentCamera.up };
-            }
-            _globePointerDown = false;
-            if (_tlPausedForDrag) {
-                _tlPausedForDrag = false;
-                tlState.playing = true;
-                document.getElementById('tl-play-btn').innerText = '❚❚';
-            }
-        }, 300);
+        _wheelZooming = true;
+        clearTimeout(_wheelFallbackTimeout);
+        _wheelFallbackTimeout = setTimeout(_resumeAfterZoom, 800);
     });
 
     document.addEventListener('keydown', (e) => {

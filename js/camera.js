@@ -12,6 +12,17 @@ function stopAutoRotate() {
     document.getElementById('rotate-btn').innerHTML = '▶';
 }
 
+// Returns the live WebGL camera (eye/center/up) directly from gl-plot3d's scene object,
+// bypassing _fullLayout.scene.camera (only updated by relayout) and currentCamera
+// (only updated by plotly_relayout, which doesn't fire during drag/zoom animations).
+// Falls back to currentCamera if the internal scene isn't available.
+function getLiveCamera() {
+    const gd = document.getElementById('chart-container');
+    const s  = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene._scene;
+    if (s && typeof s.getCamera === 'function') return s.getCamera();
+    return { eye: { ...currentCamera.eye }, center: { ...currentCamera.center }, up: { ...currentCamera.up } };
+}
+
 // Returns the current eye-to-origin distance, used to preserve zoom when navigating.
 function currentEyeDist() {
     return Math.sqrt(
