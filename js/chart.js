@@ -14,7 +14,7 @@ function drawMagChart() {
     const ctx    = canvas.getContext('2d');
     const dpr    = window.devicePixelRatio || 1;
     const W      = canvas.offsetWidth || 256;
-    const H      = 130;
+    const H      = 150;
 
     canvas.width       = W * dpr;
     canvas.height      = H * dpr;
@@ -113,10 +113,69 @@ function drawMagChart() {
         ctx.fillText(m, pad.left - 4, y);
     }
 
-    // X-axis labels (start / end year)
+    // X-axis labels and intermediate ticks
+    const spanMs = maxT - minT || 1;
+    const spanDays = spanMs / 86400000;
+
+    function fmtTick(ts) {
+        const d = new Date(ts);
+        if (spanDays > 365 * 2) return String(d.getFullYear());
+        if (spanDays > 60)      return d.toLocaleString('default', { month: 'short', year: '2-digit' });
+        return d.toLocaleString('default', { month: 'short', day: 'numeric' });
+    }
+
+    // Compute a sensible set of intermediate tick timestamps
+    function getIntervalTicks() {
+        const ticks = [];
+        const d = new Date(minT);
+        let bump;
+        if      (spanDays > 365 * 8) { d.setMonth(0,1); d.setFullYear(Math.ceil(d.getFullYear()/5)*5); bump = () => d.setFullYear(d.getFullYear()+5); }
+        else if (spanDays > 365 * 3) { d.setMonth(0,1); d.setFullYear(d.getFullYear()+1);               bump = () => d.setFullYear(d.getFullYear()+1); }
+        else if (spanDays > 180)     { d.setDate(1); d.setMonth(d.getMonth()+3 - ((d.getMonth())%3));   bump = () => d.setMonth(d.getMonth()+3); }
+        else if (spanDays > 60)      { d.setDate(1); d.setMonth(d.getMonth()+1);                        bump = () => d.setMonth(d.getMonth()+1); }
+        else if (spanDays > 14)      { d.setDate(d.getDate()+7-d.getDay());                             bump = () => d.setDate(d.getDate()+7); }
+        else                         { d.setDate(d.getDate()+1); d.setHours(0,0,0,0);                   bump = () => d.setDate(d.getDate()+1); }
+        while (d.getTime() < maxT) { ticks.push(d.getTime()); bump(); }
+        return ticks;
+    }
+
+    const ticks = getIntervalTicks();
     ctx.textBaseline = 'top';
-    ctx.textAlign    = 'left';
-    ctx.fillText(new Date(minT).getFullYear(), pad.left,          pad.top + plotH + 4);
-    ctx.textAlign    = 'right';
-    ctx.fillText(new Date(maxT).getFullYear(), pad.left + plotW,  pad.top + plotH + 4);
+    ctx.font = '9px sans-serif';
+
+    ticks.forEach(t => {
+        const x = toX(t);
+        // Tick mark
+        ctx.strokeStyle = axisColor;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, pad.top + plotH);
+        ctx.lineTo(x, pad.top + plotH + 3);
+        ctx.stroke();
+        // Subtle vertical grid line
+        ctx.strokeStyle = gridColor;
+        ctx.beginPath();
+        ctx.moveTo(x, pad.top);
+        ctx.lineTo(x, pad.top + plotH);
+        ctx.stroke();
+    });
+
+    // Label only ticks that have enough room between neighbours
+    const minLabelGap = 38;
+    let lastLabelX = pad.left - minLabelGap;
+    ctx.fillStyle = textColor;
+    ctx.textAlign = 'center';
+    ticks.forEach(t => {
+        const x = toX(t);
+        if (x - lastLabelX >= minLabelGap && pad.left + plotW - x >= minLabelGap / 2) {
+            ctx.fillText(fmtTick(t), x, pad.top + plotH + 4);
+            lastLabelX = x;
+        }
+    });
+
+    // Start / end labels (always shown, anchored to the edges)
+    ctx.textAlign = 'left';
+    ctx.fillText(fmtTick(minT), pad.left, pad.top + plotH + 4);
+    ctx.textAlign = 'right';
+    ctx.fillText(fmtTick(maxT), pad.left + plotW, pad.top + plotH + 4);
 }
