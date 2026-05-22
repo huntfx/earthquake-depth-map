@@ -257,6 +257,7 @@ input[type=date], input[type=text], input[type=number] {
 }
 .checkbox-group label { margin: 0; cursor: pointer; color: white; }
 input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; accent-color: cyan; }
+label.checkbox-label { display: flex; align-items: center; gap: 6px; margin-bottom: 0; cursor: pointer; }
 
 .preset-group { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 15px; }
 .preset-btn {

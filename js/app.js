@@ -246,6 +246,11 @@ function setupControls() {
         else updatePlot();
     });
 
+    document.getElementById('chart-sync-colors').addEventListener('change', () => {
+        invalidateMagChart();
+        drawMagChart();
+    });
+
     document.getElementById('mag-chart-btn').addEventListener('click', toggleMagChart);
     document.getElementById('load-btn').addEventListener('click', () => fetchDataAndPlot(false));
 

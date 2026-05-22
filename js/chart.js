@@ -2,6 +2,32 @@ let magChartVisible = true;
 let _chartW         = 0;
 let _staticCanvas   = null; // offscreen layer: dots, grid, axes — rebuilt when data changes
 
+const COLORSCALE_STOPS = {
+    Hot:     [[0,'#000000'],[0.30,'#e60000'],[0.60,'#ffd200'],[1,'#ffffff']],
+    YlGnBu:  [[0,'#ffffd9'],[0.25,'#7fcdbb'],[0.50,'#41b6c4'],[0.75,'#2c7fb8'],[1,'#081d58']],
+    Rainbow: [[0,'#96005a'],[0.20,'#0000c8'],[0.40,'#00d200'],[0.60,'#ffff00'],[0.80,'#ff6400'],[1,'#9a0000']],
+    YlOrRd:  [[0,'#ffffb2'],[0.25,'#fecc5c'],[0.50,'#fd8d3c'],[0.75,'#f03b20'],[1,'#bd0026']],
+    Greys:   [[0,'#ffffff'],[1,'#000000']],
+    Electric:[[0,'#000000'],[0.15,'#1e0064'],[0.40,'#7800c8'],[0.60,'#00c0ff'],[0.80,'#c8ff00'],[1,'#ffffff']]
+};
+
+function _makeColorLUT(paletteName) {
+    const stops = COLORSCALE_STOPS[paletteName] || COLORSCALE_STOPS['Hot'];
+    const oc = document.createElement('canvas');
+    oc.width = 256; oc.height = 1;
+    const ctx = oc.getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 256, 0);
+    stops.forEach(([pos, color]) => grad.addColorStop(pos, color));
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 1);
+    return ctx.getImageData(0, 0, 256, 1).data; // Uint8ClampedArray, 256×4
+}
+
+function _sampleLUT(lut, norm) {
+    const i = Math.min(255, Math.max(0, Math.round(norm * 255))) * 4;
+    return [lut[i], lut[i + 1], lut[i + 2]];
+}
+
 function toggleMagChart() {
     magChartVisible = !magChartVisible;
     const panel = document.getElementById('mag-chart-panel');
@@ -98,7 +124,16 @@ function _buildStaticLayer(W, H, dpr) {
     const textColor = light ? '#888'              : '#666';
     const gridColor = light ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)';
     const axisColor = light ? '#ccc'              : '#444';
-    const dotRGB    = light ? '0,120,120'         : '0,220,220';
+
+    const syncColors = document.getElementById('chart-sync-colors').checked;
+    const dotRGB     = light ? '0,120,120' : '0,220,220';
+    let lut, colorMode, cmin, cmax;
+    if (syncColors) {
+        const palette = document.getElementById('color-select').value;
+        colorMode     = document.getElementById('color-mode').value;
+        ({ cmin, cmax } = getColorRange(colorMode));
+        lut = _makeColorLUT(palette);
+    }
 
     const titleEl = document.getElementById('mag-chart-title');
 
@@ -135,14 +170,27 @@ function _buildStaticLayer(W, H, dpr) {
         ctx.stroke();
     }
 
-    // Dots — size and opacity relative to the visible range
+    // Dots — size/opacity by magnitude, color by palette or fixed cyan
     rawQuakeData.forEach(q => {
         const norm   = (q.realMag - minM) / magRange;
         const radius = 0.8 + norm * 2.4;
         const alpha  = 0.15 + norm * 0.7;
+
+        let fillStyle;
+        if (syncColors) {
+            const colorVal  = colorMode === 'depth' ? q.depth
+                            : colorMode === 'mag'   ? q.realMag
+                            : q.time;
+            const colorNorm = Math.max(0, Math.min(1, (colorVal - cmin) / (cmax - cmin || 1)));
+            const [r, g, b] = _sampleLUT(lut, colorNorm);
+            fillStyle = `rgba(${r},${g},${b},${alpha.toFixed(2)})`;
+        } else {
+            fillStyle = `rgba(${dotRGB},${alpha.toFixed(2)})`;
+        }
+
         ctx.beginPath();
         ctx.arc(toX(q.time), toY(q.realMag), radius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${dotRGB},${alpha.toFixed(2)})`;
+        ctx.fillStyle = fillStyle;
         ctx.fill();
     });
 
