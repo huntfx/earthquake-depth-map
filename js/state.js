@@ -61,6 +61,7 @@ let currentCamera = {
 
 let autoRotate = true;
 let isLightMode = false;
+let _globePointerDown = false;
 let rotationTimeout = null;
 
 // --- Time Lapse State ---

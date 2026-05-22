@@ -130,8 +130,19 @@ function animateGlobe() {
         });
     }
 
-    // Handle Active Pulse Animation
+    // Handle Active Pulse Animation — skip restyles while pointer is down so
+    // Plotly's drag handler isn't disrupted by per-frame restyle calls.
+    // While paused, advance startTime by the frame delta to freeze elapsed time.
     if (pulseState) {
+        const now = performance.now();
+        if (_globePointerDown) {
+            if (pulseState._lastPauseFrame) pulseState.startTime += now - pulseState._lastPauseFrame;
+            pulseState._lastPauseFrame = now;
+        } else {
+            pulseState._lastPauseFrame = null;
+        }
+    }
+    if (pulseState && !_globePointerDown) {
         const now = performance.now();
         // Physics Speed: km per second
         const speed = 300; // Reduced to 300 as requested
