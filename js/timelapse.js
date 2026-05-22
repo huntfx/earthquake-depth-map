@@ -94,6 +94,12 @@ function updateTimeLapseFrame() {
         }
     }
 
+    // Skip the restyle while the user is holding the pointer on the globe.
+    // Plotly.restyle re-applies _fullLayout.scene.camera (stale during drag) to
+    // the WebGL camera, snapping the view. Pausing updates for the drag duration
+    // is imperceptible; data resumes on pointerup.
+    if (_globePointerDown) return Promise.resolve();
+
     return Plotly.restyle('chart-container', {
         x: [qx], y: [qy], z: [qz],
         'marker.size':              [sizes],

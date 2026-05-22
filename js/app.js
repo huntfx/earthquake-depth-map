@@ -342,8 +342,37 @@ function setupInteraction() {
         awaitingData: false
     };
 
+    document.addEventListener('pointerup', () => {
+        if (!_globePointerDown) return;
+        const wasPaused = _tlPausedForDrag;
+        _tlPausedForDrag = false;
+        // Defer by one macrotask so Plotly's drag-end plotly_relayout fires first,
+        // updating currentCamera before we sync _fullLayout.scene.camera and
+        // re-enable restyles (otherwise the first restyle snaps to the old position).
+        setTimeout(() => {
+            const gd = document.getElementById('chart-container');
+            const lc = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene.camera;
+            if (lc) {
+                lc.eye    = { ...currentCamera.eye };
+                lc.center = { ...currentCamera.center };
+                lc.up     = { ...currentCamera.up };
+            }
+            _globePointerDown = false;
+            if (wasPaused) {
+                tlState.playing = true;
+                document.getElementById('tl-play-btn').innerText = '❚❚';
+            }
+        }, 0);
+    });
+
     graphDiv.addEventListener('pointerdown', (e) => {
         stopAutoRotate();
+        _globePointerDown = true;
+        if (tlState.active && tlState.playing) {
+            tlState.playing = false;
+            _tlPausedForDrag = true;
+            document.getElementById('tl-play-btn').innerText = '▶';
+        }
         const panel = document.getElementById('side-panel');
         if (panel.classList.contains('open')) {
             panel.classList.remove('open');
@@ -411,7 +440,33 @@ function setupInteraction() {
     });
 
     graphDiv.addEventListener('touchstart', stopAutoRotate);
-    graphDiv.addEventListener('wheel', stopAutoRotate);
+
+    let _wheelResumeTimeout = null;
+    graphDiv.addEventListener('wheel', () => {
+        stopAutoRotate();
+        if (tlState.active && tlState.playing) {
+            tlState.playing = false;
+            _tlPausedForDrag = true;
+            document.getElementById('tl-play-btn').innerText = '▶';
+        }
+        _globePointerDown = true;
+        clearTimeout(_wheelResumeTimeout);
+        _wheelResumeTimeout = setTimeout(() => {
+            const gd = document.getElementById('chart-container');
+            const lc = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene.camera;
+            if (lc) {
+                lc.eye    = { ...currentCamera.eye };
+                lc.center = { ...currentCamera.center };
+                lc.up     = { ...currentCamera.up };
+            }
+            _globePointerDown = false;
+            if (_tlPausedForDrag) {
+                _tlPausedForDrag = false;
+                tlState.playing = true;
+                document.getElementById('tl-play-btn').innerText = '❚❚';
+            }
+        }, 300);
+    });
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
