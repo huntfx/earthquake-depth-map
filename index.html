@@ -12,6 +12,13 @@
     <div id="loading">Initializing...</div>
 
     <!-- BUTTONS -->
+    <button id="mag-chart-btn">
+        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2"  y="12" width="4" height="6" rx="0.5"/>
+            <rect x="8"  y="7"  width="4" height="11" rx="0.5"/>
+            <rect x="14" y="3"  width="4" height="15" rx="0.5"/>
+        </svg>
+    </button>
     <button id="timelapse-mode-btn">⏱</button>
     <button id="gps-btn">
         <svg viewBox="0 0 24 24">
@@ -273,6 +280,14 @@
 
     </div>
 
+    <div id="mag-chart-panel">
+        <div id="mag-chart-header">
+            <span id="mag-chart-title">Magnitude Timeline</span>
+            <button id="mag-chart-close" onclick="toggleMagChart()">×</button>
+        </div>
+        <canvas id="mag-chart"></canvas>
+    </div>
+
     <div id="chart-container"></div>
     <div id="info-overlay">Waiting for data...</div>
 
@@ -281,6 +296,7 @@
     <script src="js/mapdata.js"></script>
     <script src="js/helpers.js"></script>
     <script src="js/camera.js"></script>
+    <script src="js/chart.js"></script>
     <script src="js/render.js"></script>
     <script src="js/timelapse.js"></script>
     <script src="js/plot.js"></script>

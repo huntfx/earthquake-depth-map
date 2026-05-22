@@ -117,6 +117,55 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
 }
 #gps-btn:hover { background: rgba(0, 255, 255, 0.2); }
 
+/* MAG CHART BUTTON */
+#mag-chart-btn {
+    position: absolute; top: 15px; right: 265px;
+    background: rgba(0, 0, 0, 0.6);
+    color: cyan;
+    border: 1px solid cyan;
+    border-radius: 4px;
+    padding: 0;
+    height: 40px;
+    width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 1001;
+    transition: all 0.2s;
+    box-sizing: border-box;
+}
+#mag-chart-btn:hover { background: rgba(0, 255, 255, 0.2); }
+#mag-chart-btn svg { width: 18px; height: 18px; fill: cyan; }
+
+/* MAG CHART PANEL */
+#mag-chart-panel {
+    position: fixed; bottom: 20px; right: 20px;
+    width: 280px;
+    background: rgba(15, 15, 15, 0.92);
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 10px 12px 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 999;
+    display: none;
+    box-sizing: border-box;
+}
+#mag-chart-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px;
+}
+#mag-chart-title {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #777;
+}
+#mag-chart-close {
+    background: none; border: none; color: #555; cursor: pointer;
+    font-size: 16px; padding: 0; line-height: 1;
+}
+#mag-chart-close:hover { color: white; }
+#mag-chart { display: block; width: 100%; }
+
 /* TIMELAPSE BUTTON (MOVED TO HEADER) */
 #timelapse-mode-btn {
     position: absolute; top: 15px; right: 215px; /* Left of GPS (165 + 50) */
@@ -399,6 +448,18 @@ body.light-mode #menu-btn {
 body.light-mode #menu-btn:hover {
     background: rgba(0, 128, 128, 0.1);
 }
+body.light-mode #mag-chart-btn {
+    background: rgba(255, 255, 255, 0.9); border-color: #333;
+}
+body.light-mode #mag-chart-btn:hover { background: rgba(0, 0, 0, 0.05); }
+body.light-mode #mag-chart-btn svg { fill: #333; }
+body.light-mode #mag-chart-panel {
+    background: rgba(255, 255, 255, 0.95); border-color: #ccc;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+body.light-mode #mag-chart-title { color: #999; }
+body.light-mode #mag-chart-close { color: #bbb; }
+body.light-mode #mag-chart-close:hover { color: #333; }
 body.light-mode #theme-btn, body.light-mode #rotate-btn, body.light-mode #reset-btn, body.light-mode #gps-btn, body.light-mode #timelapse-mode-btn {
     background: rgba(255, 255, 255, 0.9);
     color: #333;

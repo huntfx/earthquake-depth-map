@@ -246,6 +246,7 @@ function setupControls() {
         else updatePlot();
     });
 
+    document.getElementById('mag-chart-btn').addEventListener('click', toggleMagChart);
     document.getElementById('load-btn').addEventListener('click', () => fetchDataAndPlot(false));
 
     // Search — Countries

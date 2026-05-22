@@ -421,4 +421,6 @@ function updatePlot(isInitial = false) {
         volcanoTrace, surfaceLineTrace, volcanoLineTrace,
         quakeTrace, ghostTrace, pulseTrace
     ], layout, {responsive: true});
+
+    drawMagChart();
 }
