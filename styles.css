@@ -147,7 +147,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
     border-radius: 6px;
     padding: 10px 12px 8px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
     z-index: 999;
     display: block;
     box-sizing: border-box;
