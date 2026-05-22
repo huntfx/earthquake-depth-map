@@ -229,19 +229,27 @@ async function renderFrames(isResume = false, sessionData = null, preLoadedHandl
             await Plotly.relayout(graphDiv, {
                 'scene.camera': { eye: newEye, center: startCenter, up: startUp }
             });
-            await wait(20);
+            await wait(20); // let WebGL finish rendering before capture
 
             let dataUrl = await Plotly.toImage(graphDiv, { format, width: renderW, height: renderH });
-            let res = await fetch(dataUrl);
-            let blob = await res.blob();
+
+            // Decode base64 → Blob directly, avoiding a fetch() round-trip and
+            // its associated Response object (saves one full copy of the image in RAM).
+            let base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+            dataUrl = null;
+            let bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+            base64 = null;
+            let blob = new Blob([bytes], { type: `image/${format}` });
+            bytes = null;
 
             const fileHandle = await dirHandle.getFileHandle(generateFilename(filenamePattern, i, format), { create: true });
             const writable = await fileHandle.createWritable();
             await writable.write(blob);
             await writable.close();
+            blob = null;
 
             RenderSession.update(i);
-            dataUrl = null; res = null; blob = null;
+            await wait(0); // yield to event loop so GC can collect this frame before the next
         }
 
         loading.innerText = "Done!";
