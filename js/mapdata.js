@@ -138,6 +138,23 @@ function processVolcanoes(csvText) {
     return data;
 }
 
+function processNotable(geojson) {
+    return geojson.features
+        .filter(f => f.properties && f.geometry)
+        .map(f => {
+            const p = f.properties;
+            const [lon, lat] = f.geometry.coordinates;
+            return {
+                title: p.title,
+                lat,
+                lon,
+                time: p.time,
+                mag: p.mag,
+                url: p.url
+            };
+        });
+}
+
 function generateWireframeGrid() {
     const gx = [], gy = [], gz = [];
     for (let lat = -90; lat <= 90; lat += 15) {

@@ -126,6 +126,13 @@ function populateAutocomplete() {
         option.value = name;
         zonesList.appendChild(option);
     });
+
+    const notableList = document.getElementById('notable-list');
+    rawNotableData.forEach(e => {
+        const option = document.createElement('option');
+        option.value = e.title;
+        notableList.appendChild(option);
+    });
 }
 
 function setupControls() {
@@ -297,6 +304,23 @@ function setupControls() {
             document.getElementById('zone-input').blur();
         }
     });
+
+    // Search — Notable Events
+    document.getElementById('notable-btn').addEventListener('click', searchNotable);
+    document.getElementById('notable-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') searchNotable();
+    });
+    document.getElementById('notable-input').addEventListener('input', (e) => {
+        const val = e.target.value.trim().toLowerCase();
+        const btn = document.getElementById('notable-btn');
+        const isExact = rawNotableData.some(ev => ev.title.toLowerCase() === val);
+        const isPartial = rawNotableData.some(ev => ev.title.toLowerCase().includes(val));
+        btn.disabled = !(isExact || (val.length > 2 && isPartial));
+        if (isExact && e.inputType === 'insertReplacementText') {
+            searchNotable();
+            document.getElementById('notable-input').blur();
+        }
+    });
 }
 
 function setupInteraction() {
@@ -407,10 +431,11 @@ async function initApp() {
         console.log("Downloading static map data...");
         document.getElementById('loading').innerText = "Loading Map Data...";
 
-        const [borderRes, platesRes, volcanoRes] = await Promise.all([
+        const [borderRes, platesRes, volcanoRes, notableRes] = await Promise.all([
             fetch(BORDERS_URL),
             fetch(PLATES_URL),
-            fetch(VOLCANOES_URL)
+            fetch(VOLCANOES_URL),
+            fetch(NOTABLE_URL).catch(() => null)
         ]);
 
         const borderJson = await borderRes.json();
@@ -423,6 +448,11 @@ async function initApp() {
         rawVolcanoData = processVolcanoes(volcanoCsv);
         staticPlateArrays = processPlates(platesJson);
         staticGridArrays = generateWireframeGrid();
+
+        if (notableRes && notableRes.ok) {
+            const notableJson = await notableRes.json();
+            rawNotableData = processNotable(notableJson);
+        }
 
         console.log(`Loaded ${rawVolcanoData.length} volcanoes.`);
 

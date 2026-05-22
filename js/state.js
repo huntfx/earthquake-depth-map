@@ -1,6 +1,7 @@
 // --- Constants ---
 const EARTH_RADIUS = 6371;
 const USGS_BASE_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&orderby=magnitude";
+const NOTABLE_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&orderby=magnitude&minmagnitude=7.5&minsig=800&limit=100&starttime=1900-01-01";
 const BORDERS_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
 const PLATES_URL = "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json";
 const VOLCANOES_URL = "https://raw.githubusercontent.com/plotly/datasets/master/volcano_db.csv";
@@ -15,6 +16,7 @@ const ROTATION_SPEED = -0.001;
 // --- State ---
 let rawQuakeData = [];
 let rawVolcanoData = [];
+let rawNotableData = [];
 let stats = { maxMag: 0, maxDepth: 0, minTime: 0, maxTime: 0, avgMag: 0 };
 
 let pulseState = null; // Stores pulse animation state

@@ -116,6 +116,39 @@ function searchZone() {
     }
 }
 
+function searchNotable() {
+    document.getElementById('quake-info').style.display = 'none';
+    if (tlState.active) stopTimeLapse();
+
+    const input = document.getElementById('notable-input');
+    const btn = document.getElementById('notable-btn');
+    const query = input.value.trim().toLowerCase();
+    if (!query) return;
+
+    let found = rawNotableData.find(e => e.title.toLowerCase() === query);
+    if (!found) found = rawNotableData.find(e => e.title.toLowerCase().includes(query));
+    if (!found) return;
+
+    // Set date range to ±30 days around the event
+    const eventDate = new Date(found.time);
+    const pad = (n) => String(n).padStart(2, '0');
+    const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const before = new Date(eventDate.getTime() - 30 * 86400000);
+    const after  = new Date(eventDate.getTime() + 30 * 86400000);
+    document.getElementById('start-date').value = fmt(before);
+    document.getElementById('end-date').value   = fmt(after);
+
+    // Lower the magnitude filter so the event itself is visible
+    document.getElementById('min-mag-slider').value = '4.0';
+    updateLabels();
+
+    cameraGoTo(found.lat, found.lon, 1.2);
+    fetchDataAndPlot(false);
+
+    input.value = '';
+    btn.disabled = true;
+}
+
 function calculateResponsiveCamera() {
     const width = window.innerWidth;
     const height = window.innerHeight;
