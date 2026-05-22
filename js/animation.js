@@ -166,11 +166,11 @@ function animateGlobe() {
                 'line.color': colorString,
                 'line.width': [width],
                 'visible': true
-            }, [10]);
+            }, [TRACE.PULSE]);
         } else {
             // Animation Complete - Ensure it's fully transparent/hidden
             syncSceneCamera();
-            Plotly.restyle('chart-container', {'visible': false}, [10]);
+            Plotly.restyle('chart-container', {'visible': false}, [TRACE.PULSE]);
             pulseState = null;
         }
     }

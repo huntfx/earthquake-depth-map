@@ -2,6 +2,12 @@
 // magnitude ~0.47. The default eye at (~1.5, ~1.5, ~1.5) sits comfortably outside it.
 const PLOT_SCALE = 3000 / EARTH_RADIUS;
 
+let _chartDiv = null;
+function getChartDiv() {
+    if (!_chartDiv) _chartDiv = document.getElementById('chart-container');
+    return _chartDiv;
+}
+
 // Stop auto-rotation and cancel any pending resume timer.
 function stopAutoRotate() {
     if (rotationTimeout) {
@@ -17,7 +23,7 @@ function stopAutoRotate() {
 // (only updated by plotly_relayout, which doesn't fire during drag/zoom animations).
 // Falls back to currentCamera if the internal scene isn't available.
 function getLiveCamera() {
-    const gd = document.getElementById('chart-container');
+    const gd = getChartDiv();
     const s  = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene._scene;
     if (s && typeof s.getCamera === 'function') return s.getCamera();
     return { eye: { ...currentCamera.eye }, center: { ...currentCamera.center }, up: { ...currentCamera.up } };
@@ -26,7 +32,7 @@ function getLiveCamera() {
 // Writes the live WebGL camera into _fullLayout.scene.camera so any immediately
 // following Plotly.restyle uses the correct position and doesn't snap the view.
 function syncSceneCamera() {
-    const gd = document.getElementById('chart-container');
+    const gd = getChartDiv();
     const lc = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene.camera;
     if (!lc) return;
     const live = getLiveCamera();

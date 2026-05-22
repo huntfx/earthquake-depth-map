@@ -158,8 +158,7 @@ function updatePlot(isInitial = false) {
     // Use shared helper for consistency, multiplier 1 for standard view
     const sizes = calculateScaledSizes(1.0);
 
-    let i = 0;
-    for (const q of rawQuakeData) {
+    rawQuakeData.forEach((q, i) => {
         const r_quake = EARTH_RADIUS - (q.depth * depthScale);
         const [x, y, z] = latLonToXYZ(q.lat, q.lon, r_quake);
         qx.push(x); qy.push(y); qz.push(z);
@@ -200,9 +199,7 @@ function updatePlot(isInitial = false) {
               lineColors.push(val);
               lineColors.push(val);
         }
-
-        i++;
-    }
+    });
 
     const { cmin, cmax } = getColorRange(colorMode);
     const colorSettings = {
@@ -357,11 +354,11 @@ function updatePlot(isInitial = false) {
         type: 'scatter3d', mode: 'markers',
         x: qx, y: qy, z: qz,
         text: texts, hoverinfo: 'text',
-        customdata: customData, // FIX: Pass full object to ghost trace too!
+        customdata: customData,
         marker: { size: ghostSizes, color: 'rgba(0,0,0,0)', opacity: 0.0 }
     };
 
-    // Trace 9: Pulse Animation (Initially Empty)
+    // Trace 10: Pulse Animation (Initially Empty)
     // Changed from 'markers' (slow symbol scaling) to 'lines' (fast ring geometry)
     const pulseTrace = {
         type: 'scatter3d',
@@ -415,7 +412,7 @@ function updatePlot(isInitial = false) {
         hoverinfo: 'none'
     };
 
-    // Updated Trace Order - pulseTrace is Trace 9
+    // Updated Trace Order - pulseTrace is Trace 10
     Plotly.react('chart-container', [
         gridTrace, coreTrace, borderTrace, plateTrace, labelTrace,
         volcanoTrace, surfaceLineTrace, volcanoLineTrace,

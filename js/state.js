@@ -11,6 +11,20 @@ const VOLCANOES_URL = "https://raw.githubusercontent.com/plotly/datasets/master/
 const BASE_BORDER_WIDTH = 3;
 const BASE_PLATE_WIDTH = 4;
 
+const TRACE = {
+    GRID:         0,
+    CORE:         1,
+    BORDER:       2,
+    PLATE:        3,
+    LABEL:        4,
+    VOLCANO:      5,
+    SURFACE_LINE: 6,
+    VOLCANO_LINE: 7,
+    QUAKE:        8,
+    GHOST:        9,
+    PULSE:        10
+};
+
 const ROTATION_SPEED = -0.001;
 
 // --- State ---

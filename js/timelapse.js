@@ -27,7 +27,7 @@ async function startTimeLapse() {
     });
 
     syncSceneCamera();
-    await Plotly.restyle('chart-container', { visible: false }, [6, 9]);
+    await Plotly.restyle('chart-container', { visible: false }, [TRACE.SURFACE_LINE, TRACE.GHOST]);
     await updateTimeLapseFrame();
 }
 
@@ -110,7 +110,7 @@ function updateTimeLapseFrame() {
         'marker.colorbar.tickmode': tickmode,
         'marker.colorbar.tickvals': tickvals,
         'marker.colorbar.ticktext': ticktext
-    }, [8]);
+    }, [TRACE.QUAKE]);
 }
 
 // --- Event Listeners ---

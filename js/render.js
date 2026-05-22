@@ -201,11 +201,11 @@ async function renderFrames(isResume = false, sessionData = null, preLoadedHandl
     const originalLabelSize = document.getElementById('labels-checkbox').checked ? 12 : 0;
 
     syncSceneCamera();
-    await Plotly.restyle(graphDiv, { 'marker.showscale': false, 'marker.size': [calculateScaledSizes(visualMultiplier)] }, [8]);
-    await Plotly.restyle(graphDiv, { 'marker.size': baseRenderSize * 2.0 * visualMultiplier }, [5]);
-    await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH * visualMultiplier }, [2]);
-    await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH * visualMultiplier }, [3]);
-    await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize * visualMultiplier }, [4]);
+    await Plotly.restyle(graphDiv, { 'marker.showscale': false, 'marker.size': [calculateScaledSizes(visualMultiplier)] }, [TRACE.QUAKE]);
+    await Plotly.restyle(graphDiv, { 'marker.size': baseRenderSize * 2.0 * visualMultiplier }, [TRACE.VOLCANO]);
+    await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH * visualMultiplier }, [TRACE.BORDER]);
+    await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH * visualMultiplier }, [TRACE.PLATE]);
+    await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize * visualMultiplier }, [TRACE.LABEL]);
 
     const startCam    = getLiveCamera();
     const startEye    = startCam.eye;
@@ -258,11 +258,11 @@ async function renderFrames(isResume = false, sessionData = null, preLoadedHandl
         RenderSession.complete();
 
         await Plotly.relayout(graphDiv, { 'scene.camera': { eye: startEye, center: startCenter, up: startUp } });
-        await Plotly.restyle(graphDiv, { 'marker.showscale': true, 'marker.size': [calculateScaledSizes(1.0)] }, [8]);
-        await Plotly.restyle(graphDiv, { 'marker.size': baseRenderSize * 2.0 }, [5]);
-        await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH }, [2]);
-        await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH }, [3]);
-        await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [4]);
+        await Plotly.restyle(graphDiv, { 'marker.showscale': true, 'marker.size': [calculateScaledSizes(1.0)] }, [TRACE.QUAKE]);
+        await Plotly.restyle(graphDiv, { 'marker.size': baseRenderSize * 2.0 }, [TRACE.VOLCANO]);
+        await Plotly.restyle(graphDiv, { 'line.width': BASE_BORDER_WIDTH }, [TRACE.BORDER]);
+        await Plotly.restyle(graphDiv, { 'line.width': BASE_PLATE_WIDTH }, [TRACE.PLATE]);
+        await Plotly.restyle(graphDiv, { 'textfont.size': originalLabelSize }, [TRACE.LABEL]);
 
         setTimeout(() => { loading.style.display = 'none'; loading.innerText = "Initializing..."; }, 2000);
 

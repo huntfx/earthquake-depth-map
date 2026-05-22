@@ -1,3 +1,23 @@
+// --- Module-level timelapse interaction pause/resume ---
+let _tlPausedForInteraction = false;
+let _wheelResumeTimer       = null;
+
+function _pauseTL() {
+    if (tlState.active && tlState.playing) {
+        tlState.playing = false;
+        _tlPausedForInteraction = true;
+        document.getElementById('tl-play-btn').innerText = '▶';
+    }
+}
+
+function _resumeTL() {
+    if (_tlPausedForInteraction) {
+        tlState.playing = true;
+        _tlPausedForInteraction = false;
+        document.getElementById('tl-play-btn').innerText = '❚❚';
+    }
+}
+
 // --- UI Logic ---
 function toggleMenu() {
     document.getElementById('side-panel').classList.toggle('open');
@@ -327,24 +347,7 @@ function setupInteraction() {
     const graphDiv = document.getElementById('chart-container');
 
     // Pause timelapse playback during camera interaction and resume when done.
-    let _tlPausedForInteraction = false;
-    let _wheelResumeTimer = null;
-
-    function _pauseTL() {
-        if (tlState.active && tlState.playing) {
-            tlState.playing = false;
-            _tlPausedForInteraction = true;
-            document.getElementById('tl-play-btn').innerText = '▶';
-        }
-    }
-
-    function _resumeTL() {
-        if (_tlPausedForInteraction) {
-            tlState.playing = true;
-            _tlPausedForInteraction = false;
-            document.getElementById('tl-play-btn').innerText = '❚❚';
-        }
-    }
+    // (_pauseTL, _resumeTL, _tlPausedForInteraction, _wheelResumeTimer are module-level)
 
     // HANDSHAKE STATE
     // We separate the "Data Availability" (from Plotly) and the "Interaction Complete" (from DOM)

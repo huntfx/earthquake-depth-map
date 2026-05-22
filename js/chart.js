@@ -11,6 +11,16 @@ const COLORSCALE_STOPS = {
     Electric:[[0,'#000000'],[0.15,'#1e0064'],[0.40,'#7800c8'],[0.60,'#00c0ff'],[0.80,'#c8ff00'],[1,'#ffffff']]
 };
 
+const CHART_PAD = { top: 12, right: 8, bottom: 22, left: 26 };
+
+function _fmtHoverDate(ts, spanMs) {
+    const d = new Date(ts);
+    const spanDays = spanMs / 86400000;
+    if (spanDays > 365 * 2) return String(d.getFullYear());
+    if (spanDays > 60) return d.toLocaleString('default', { month: 'short', year: '2-digit' });
+    return d.toLocaleString('default', { month: 'short', day: 'numeric', year: '2-digit' });
+}
+
 function _makeColorLUT(paletteName) {
     const stops = COLORSCALE_STOPS[paletteName] || COLORSCALE_STOPS['Hot'];
     const oc = document.createElement('canvas');
@@ -79,7 +89,7 @@ function drawMagChart() {
     // Overlay lines — drawn in logical coordinates with DPR scale restored.
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const pad   = { top: 12, right: 8, bottom: 22, left: 26 };
+    const pad   = CHART_PAD;
     const plotW = W - pad.left - pad.right;
     const plotH = H - pad.top  - pad.bottom;
 
@@ -106,6 +116,19 @@ function drawMagChart() {
         ctx.moveTo(_hoverX, pad.top);
         ctx.lineTo(_hoverX, pad.top + plotH);
         ctx.stroke();
+
+        // Date tooltip
+        if (rawQuakeData.length > 0) {
+            const pct   = Math.max(0, Math.min(1, (_hoverX - pad.left) / plotW));
+            const t     = stats.minTime + pct * (stats.maxTime - stats.minTime);
+            const label = _fmtHoverDate(t, stats.maxTime - stats.minTime);
+            const labelX = _hoverX > W / 2 ? _hoverX - 4 : _hoverX + 4;
+            ctx.font         = '9px sans-serif';
+            ctx.textBaseline = 'top';
+            ctx.textAlign    = _hoverX > W / 2 ? 'right' : 'left';
+            ctx.fillStyle    = 'rgba(255,220,0,0.95)';
+            ctx.fillText(label, labelX, pad.top + 1);
+        }
     }
 }
 
@@ -116,7 +139,7 @@ function _buildStaticLayer(W, H, dpr) {
     const ctx = oc.getContext('2d');
     ctx.scale(dpr, dpr);
 
-    const pad   = { top: 12, right: 8, bottom: 22, left: 26 };
+    const pad   = CHART_PAD;
     const plotW = W - pad.left - pad.right;
     const plotH = H - pad.top  - pad.bottom;
 
@@ -276,7 +299,7 @@ document.getElementById('mag-chart').addEventListener('mousemove', (e) => {
     if (!magChartVisible) return;
     const canvas = document.getElementById('mag-chart');
     const rect   = canvas.getBoundingClientRect();
-    const pad    = { left: 26, right: 8 };
+    const pad    = CHART_PAD;
     const x      = e.clientX - rect.left;
     const inPlot = x >= pad.left && x <= rect.width - pad.right;
     _hoverX             = inPlot ? x : null;
