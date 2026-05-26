@@ -434,19 +434,28 @@ function updateStaticTracesForTimelapse() {
     const selectedPalette  = document.getElementById('color-select').value;
     const colorMode        = document.getElementById('color-mode').value;
 
-    const borderColor = isLightMode ? '#666'    : '#008888';
-    const plateColor  = isLightMode ? '#2288cc' : '#1565C0';
-    const volcColor   = isLightMode ? 'white'   : 'black';
-    const volcLine    = isLightMode ? 'black'   : 'white';
-    const borderWidth = bordersEnabled ? BASE_BORDER_WIDTH : 0;
-    const plateWidth  = platesEnabled  ? BASE_PLATE_WIDTH  : 0;
-    const labelSize   = showLabels     ? 12                : 0;
+    const borderColor      = isLightMode ? '#666'                    : '#008888';
+    const plateColor       = isLightMode ? '#2288cc'                 : '#1565C0';
+    const volcColor        = isLightMode ? 'white'                   : 'black';
+    const volcLine         = isLightMode ? 'black'                   : 'white';
+    const gridColor        = isLightMode ? '#ccc'                    : '#333';
+    const labelColor       = isLightMode ? 'rgba(0,0,0,0.7)'        : 'rgba(180,180,180,0.9)';
+    const coreColor        = isLightMode ? '#f0f0f0'                 : 'black';
+    const coreOpacity      = isLightMode ? 0.4                       : 0.2;
+    const volcanoLineColor = isLightMode ? 'rgba(0,0,0,0.4)'        : 'rgba(255,255,255,0.4)';
+    const bgColor          = isLightMode ? '#f0f0f0'                 : 'black';
+    const borderWidth      = bordersEnabled ? BASE_BORDER_WIDTH : 0;
+    const plateWidth       = platesEnabled  ? BASE_PLATE_WIDTH  : 0;
+    const labelSize        = showLabels     ? 12                : 0;
 
     syncSceneCamera();
 
-    Plotly.restyle('chart-container', { visible: bordersEnabled, 'line.color': borderColor, 'line.width': borderWidth }, [TRACE.BORDER]);
-    Plotly.restyle('chart-container', { visible: platesEnabled,  'line.color': plateColor,  'line.width': plateWidth  }, [TRACE.PLATE]);
-    Plotly.restyle('chart-container', { visible: labelSize > 0,  'textfont.size': labelSize                           }, [TRACE.LABEL]);
+    Plotly.relayout('chart-container', { paper_bgcolor: bgColor, plot_bgcolor: bgColor });
+    Plotly.restyle('chart-container', { 'line.color': gridColor                                                              }, [TRACE.GRID]);
+    Plotly.restyle('chart-container', { 'marker.color': coreColor, 'marker.opacity': coreOpacity                            }, [TRACE.CORE]);
+    Plotly.restyle('chart-container', { visible: bordersEnabled, 'line.color': borderColor, 'line.width': borderWidth       }, [TRACE.BORDER]);
+    Plotly.restyle('chart-container', { visible: platesEnabled,  'line.color': plateColor,  'line.width': plateWidth        }, [TRACE.PLATE]);
+    Plotly.restyle('chart-container', { visible: labelSize > 0,  'textfont.size': labelSize, 'textfont.color': labelColor   }, [TRACE.LABEL]);
 
     if (volcanoesEnabled) {
         const vx = [], vy = [], vz = [], vtext = [], vCustom = [];
@@ -463,7 +472,7 @@ function updateStaticTracesForTimelapse() {
             }
         });
         Plotly.restyle('chart-container', { x: [vx], y: [vy], z: [vz], text: [vtext], customdata: [vCustom], 'marker.color': volcColor, 'marker.line.color': volcLine, visible: true }, [TRACE.VOLCANO]);
-        Plotly.restyle('chart-container', { x: [vlx], y: [vly], z: [vlz], visible: showSurfaceLines }, [TRACE.VOLCANO_LINE]);
+        Plotly.restyle('chart-container', { x: [vlx], y: [vly], z: [vlz], 'line.color': volcanoLineColor, visible: showSurfaceLines }, [TRACE.VOLCANO_LINE]);
     } else {
         Plotly.restyle('chart-container', { visible: false }, [TRACE.VOLCANO]);
         Plotly.restyle('chart-container', { visible: false }, [TRACE.VOLCANO_LINE]);

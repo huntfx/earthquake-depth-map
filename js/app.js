@@ -202,7 +202,8 @@ function setupControls() {
             document.body.classList.remove('light-mode');
             btn.innerHTML = '☀';
         }
-        updatePlot();
+        if (tlState.active) updateStaticTracesForTimelapse();
+        else updatePlot();
     });
 
     // Rotation toggle
