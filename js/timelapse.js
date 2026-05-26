@@ -39,7 +39,7 @@ function stopTimeLapse() {
     updatePlot();
 }
 
-function updateTimeLapseFrame() {
+async function updateTimeLapseFrame() {
     const windowEnd   = tlState.currentTime;
     const windowStart = windowEnd - tlState.windowSize;
 
@@ -100,7 +100,7 @@ function updateTimeLapseFrame() {
     // re-applies exactly what's already on screen — no snap.
     syncSceneCamera();
 
-    return Plotly.restyle('chart-container', {
+    await Plotly.restyle('chart-container', {
         x: [qx], y: [qy], z: [qz],
         'marker.size':              [sizes],
         'marker.color':             [colors],
@@ -112,6 +112,25 @@ function updateTimeLapseFrame() {
         'marker.colorbar.tickvals': tickvals,
         'marker.colorbar.ticktext': ticktext
     }, [TRACE.QUAKE]);
+
+    if (document.getElementById('surface-lines-checkbox').checked) {
+        const slx = [], sly = [], slz = [], slColors = [];
+        visibleQuakes.forEach(q => {
+            const [x, y, z] = latLonToXYZ(q.lat, q.lon, EARTH_RADIUS - q.depth * depthScale);
+            const [sx, sy, sz] = latLonToXYZ(q.lat, q.lon, EARTH_RADIUS);
+            const val = colorMode === 'depth' ? q.depth : colorMode === 'mag' ? q.mag : q.time;
+            slx.push(sx, x, null); sly.push(sy, y, null); slz.push(sz, z, null);
+            slColors.push(val, val, val);
+        });
+        await Plotly.restyle('chart-container', {
+            x: [slx], y: [sly], z: [slz],
+            'line.color':      [slColors],
+            'line.colorscale': selectedPalette,
+            'line.cmin':       cmin,
+            'line.cmax':       cmax,
+            visible:           true
+        }, [TRACE.SURFACE_LINE]);
+    }
 }
 
 // --- Event Listeners ---

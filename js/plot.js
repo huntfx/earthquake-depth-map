@@ -472,7 +472,14 @@ function updateStaticTracesForTimelapse() {
     if (showSurfaceLines) {
         const slx = [], sly = [], slz = [], lineColors = [];
         const { cmin, cmax } = getColorRange(colorMode);
-        rawQuakeData.forEach(q => {
+        const windowEnd = tlState.currentTime;
+        const windowStart = windowEnd - tlState.windowSize;
+        let windowQuakes = tlState.sortedData.filter(q => q.time >= windowStart && q.time <= windowEnd);
+        if (windowStart < tlState.startTime) {
+            const wrapCutoff = tlState.endTime - (tlState.startTime - windowStart);
+            windowQuakes = windowQuakes.concat(tlState.sortedData.filter(q => q.time >= wrapCutoff));
+        }
+        windowQuakes.forEach(q => {
             const r = EARTH_RADIUS - (q.depth * depthScale);
             const [x, y, z] = latLonToXYZ(q.lat, q.lon, r);
             const [sx, sy, sz] = latLonToXYZ(q.lat, q.lon, EARTH_RADIUS);
