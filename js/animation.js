@@ -1,3 +1,7 @@
+let _pulseNow        = performance.now();
+let _pulseWasFrozen  = false;
+let _pulseFreezeStart = 0;
+
 // Initialise the pulse animation for a clicked earthquake.
 function triggerPulse(q) {
     if (!q || q.type === 'volcano') return;
@@ -119,7 +123,7 @@ function drawPulses() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
 
-    const now = performance.now();
+    const now = _pulseNow;
     const speed = 300; // km/s
 
     // Camera state for projection and far-side culling.
@@ -221,6 +225,19 @@ function tickTimeLapse() {
 }
 
 function animateGlobe() {
+    const _freezePulse = tlState.active && !tlState.playing;
+    if (!_freezePulse) {
+        if (_pulseWasFrozen) {
+            const pauseMs = performance.now() - _pulseFreezeStart;
+            pulseStates.forEach(p => { p.startTime += pauseMs; });
+            _pulseWasFrozen = false;
+        }
+        _pulseNow = performance.now();
+    } else if (!_pulseWasFrozen) {
+        _pulseFreezeStart = performance.now();
+        _pulseWasFrozen = true;
+    }
+
     const graphDiv = document.getElementById('chart-container');
     const scene = graphDiv._fullLayout ? graphDiv._fullLayout.scene : null;
 

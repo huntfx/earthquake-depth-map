@@ -74,7 +74,7 @@ let tlState = {
     popEnabled: true, // Default to true
     soundEnabled: false,
     lastSoundTime: 0,
-    pulseEnabled: false,
+    pulseEnabled: true,
     lastPulseTime: 0,
     sortedData: [],
     lastDrawTime: 0,
