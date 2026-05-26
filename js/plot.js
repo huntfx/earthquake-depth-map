@@ -107,8 +107,6 @@ async function fetchDataAndPlot(isInitial = false) {
 }
 
 function updatePlot(isInitial = false) {
-    // If Time Lapse is active, don't let this function override the visualization unless we are resetting
-    if (tlState.active && !isInitial) return;
 
     const depthScale = parseFloat(document.getElementById('depth-slider').value);
     const baseSize = parseFloat(document.getElementById('size-slider').value);
@@ -355,7 +353,8 @@ function updatePlot(isInitial = false) {
         x: qx, y: qy, z: qz,
         text: texts, hoverinfo: 'text',
         customdata: customData,
-        marker: { size: ghostSizes, color: 'rgba(0,0,0,0)', opacity: 0.0 }
+        marker: { size: ghostSizes, color: 'rgba(0,0,0,0)', opacity: 0.0 },
+        visible: !tlState.active  // hidden during timelapse (hover not meaningful on filtered data)
     };
 
     const layout = {
@@ -406,4 +405,9 @@ function updatePlot(isInitial = false) {
 
     invalidateMagChart();
     drawMagChart();
+
+    // After rebuilding static traces, restore timelapse quake window if active.
+    if (tlState.active && !isInitial) {
+        updateTimeLapseFrame();
+    }
 }
