@@ -17,6 +17,7 @@ async function startTimeLapse() {
     tlState.endTime = stats.maxTime;
     tlState.currentTime = tlState.startTime;
     tlState.lastSoundTime = tlState.startTime - 1000;
+    tlState.lastPulseTime = tlState.startTime - 1000;
     tlState.sortedData = [...rawQuakeData].sort((a, b) => a.time - b.time);
 
     // Changing uirevision forces Plotly to adopt the current camera as a fresh
@@ -142,10 +143,16 @@ document.getElementById('tl-sound-check').addEventListener('change', (e) => {
     if (e.target.checked) initAudio();
 });
 
+document.getElementById('tl-waves-check').addEventListener('change', (e) => {
+    tlState.pulseEnabled = e.target.checked;
+    tlState.lastPulseTime = tlState.currentTime;
+});
+
 document.getElementById('tl-scrubber').addEventListener('input', (e) => {
     const percent = parseFloat(e.target.value);
     tlState.currentTime = tlState.startTime + (tlState.endTime - tlState.startTime) * (percent / 100);
     tlState.lastSoundTime = tlState.currentTime;
+    tlState.lastPulseTime = tlState.currentTime;
 
     const dateStr = new Date(tlState.currentTime).toISOString().slice(0, 16).replace('T', ' ');
     document.getElementById('tl-date-display').innerText = dateStr;

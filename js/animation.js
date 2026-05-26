@@ -169,6 +169,7 @@ function tickTimeLapse() {
     if (tlState.currentTime >= tlState.endTime) {
         tlState.currentTime = tlState.startTime;
         tlState.lastSoundTime = tlState.startTime;
+        tlState.lastPulseTime = tlState.startTime;
     }
 
     document.getElementById('tl-date-display').innerText =
@@ -199,6 +200,18 @@ function tickTimeLapse() {
         }
 
         tlState.lastSoundTime = tlState.currentTime;
+    }
+
+    if (tlState.pulseEnabled) {
+        let checkTime = tlState.lastPulseTime;
+        if (tlState.currentTime < checkTime) {
+            checkTime = tlState.startTime - 1000;
+            tlState.lastPulseTime = checkTime;
+        }
+        tlState.sortedData
+            .filter(q => q.time > checkTime && q.time <= tlState.currentTime)
+            .forEach(q => triggerPulse(q));
+        tlState.lastPulseTime = tlState.currentTime;
     }
 
     if (now - tlState.lastDrawTime > tlState.drawInterval) {

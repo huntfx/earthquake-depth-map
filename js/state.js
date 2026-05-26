@@ -74,6 +74,8 @@ let tlState = {
     popEnabled: true, // Default to true
     soundEnabled: false,
     lastSoundTime: 0,
+    pulseEnabled: false,
+    lastPulseTime: 0,
     sortedData: [],
     lastDrawTime: 0,
     drawInterval: 25, // ms (10 FPS limit for visual chart updates)
