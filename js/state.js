@@ -21,8 +21,7 @@ const TRACE = {
     SURFACE_LINE: 6,
     VOLCANO_LINE: 7,
     QUAKE:        8,
-    GHOST:        9,
-    PULSE:        10
+    GHOST:        9
 };
 
 const ROTATION_SPEED = -0.001;
@@ -33,7 +32,7 @@ let rawVolcanoData = [];
 let rawNotableData = [];
 let stats = { maxMag: 0, maxDepth: 0, minTime: 0, maxTime: 0, avgMag: 0 };
 
-let pulseState = null; // Stores pulse animation state
+let pulseStates = []; // Stores pulse animation states
 let selectedQuake = null; // Current selected object for simulation
 
 let staticBorderArrays = { x: [], y: [], z: [] };
@@ -61,7 +60,6 @@ let currentCamera = {
 
 let autoRotate = true;
 let isLightMode = false;
-let _globePointerDown = false;
 let rotationTimeout = null;
 
 // --- Time Lapse State ---

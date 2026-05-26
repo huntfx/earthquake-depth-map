@@ -600,3 +600,11 @@ body.light-mode #resume-header { color: #cc0000; }
 body.light-mode #resume-text { color: #333; }
 body.light-mode #resume-btn { background: #ff4444; color: white; }
 body.light-mode #resume-btn:hover { background: #cc0000; }
+
+#pulse-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 5;
+}

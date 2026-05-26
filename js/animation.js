@@ -1,14 +1,13 @@
 // Initialise the pulse animation for a clicked earthquake.
 function triggerPulse(q) {
     if (!q || q.type === 'volcano') return;
-    // Exponential scale: roughly M4=140km, M5=280km, M7=1000km, M9=4000km
     const animMaxRadius = Math.max(500, Math.exp(q.realMag / 1.5) * 20);
-    pulseState = {
+    pulseStates.push({
         startTime: performance.now(),
         lat: q.lat,
         lon: q.lon,
         maxRadius: animMaxRadius
-    };
+    });
 }
 
 // Helper function to generate circle points on sphere
@@ -44,6 +43,122 @@ function getCirclePoints(lat, lon, radiusKm) {
     }
 
     return points;
+}
+
+// Project a raw data point (km) to NDC [-1,1] using the live camera state.
+// Builds view + perspective from getLiveCamera() so no Plotly internals needed.
+// Returns {ndcX, ndcY} or null if behind the camera.
+function _project3D(W, H, lc, x, y, z) {
+    // Point relative to camera eye, in scene units.
+    const s  = PLOT_SCALE / EARTH_RADIUS;
+    const px = x * s - lc.eye.x;
+    const py = y * s - lc.eye.y;
+    const pz = z * s - lc.eye.z;
+
+    // Forward direction f = normalize(center - eye).
+    let fx = lc.center.x - lc.eye.x;
+    let fy = lc.center.y - lc.eye.y;
+    let fz = lc.center.z - lc.eye.z;
+    const flen = Math.sqrt(fx*fx + fy*fy + fz*fz);
+    fx /= flen; fy /= flen; fz /= flen;
+
+    const depth = fx*px + fy*py + fz*pz; // positive = in front of camera
+    if (depth <= 0) return null;
+
+    // Camera right r = normalize(f × up).
+    const ux = lc.up.x, uy = lc.up.y, uz = lc.up.z;
+    let rx = fy*uz - fz*uy;
+    let ry = fz*ux - fx*uz;
+    let rz = fx*uy - fy*ux;
+    const rlen = Math.sqrt(rx*rx + ry*ry + rz*rz);
+    rx /= rlen; ry /= rlen; rz /= rlen;
+
+    // Camera up u = r × f.
+    const upx = ry*fz - rz*fy;
+    const upy = rz*fx - rx*fz;
+    const upz = rx*fy - ry*fx;
+
+    // Project onto camera plane.
+    const cam_x = rx*px  + ry*py  + rz*pz;
+    const cam_y = upx*px + upy*py + upz*pz;
+
+    // Perspective — gl-plot3d default fovY = π/4.
+    const focal  = 1.0 / Math.tan(Math.PI / 8); // 1/tan(22.5°) ≈ 2.414
+    const aspect = W / H;
+
+    return {
+        ndcX: (focal / aspect) * cam_x / depth,
+        ndcY: focal * cam_y / depth
+    };
+}
+
+// Draw all active pulse waves onto the canvas overlay.
+function drawPulses() {
+    const canvas = document.getElementById('pulse-canvas');
+    if (!canvas || pulseStates.length === 0) {
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+        return;
+    }
+
+    const gd  = getChartDiv();
+    if (!gd._fullLayout) return;
+
+    const W   = gd.clientWidth;
+    const H   = gd.clientHeight;
+    const dpr = window.devicePixelRatio || 1;
+
+    if (canvas.width !== W * dpr || canvas.height !== H * dpr) {
+        canvas.width  = W * dpr;
+        canvas.height = H * dpr;
+    }
+
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    const now = performance.now();
+    const speed = 300; // km/s
+
+    // Camera state for projection and far-side culling.
+    const lc = getLiveCamera();
+    const cs = EARTH_RADIUS / PLOT_SCALE;
+    const ex = (lc.eye.x - lc.center.x) * cs;
+    const ey = (lc.eye.y - lc.center.y) * cs;
+    const ez = (lc.eye.z - lc.center.z) * cs;
+
+    pulseStates = pulseStates.filter(pulse => {
+        const elapsed  = (now - pulse.startTime) / 1000;
+        const radius   = elapsed * speed;
+        const progress = radius / pulse.maxRadius;
+        if (progress >= 1) return false;
+
+        const opacity = 1 - Math.pow(progress, 1.5);
+        const pts     = getCirclePoints(pulse.lat, pulse.lon, radius);
+
+        ctx.beginPath();
+        let penUp = true;
+        for (let i = 0; i < pts.x.length; i++) {
+            if (pts.x[i] * ex + pts.y[i] * ey + pts.z[i] * ez < 0) {
+                penUp = true;
+                continue;
+            }
+            const p = _project3D(W, H, lc, pts.x[i], pts.y[i], pts.z[i]);
+            if (!p) { penUp = true; continue; }
+            const cx = (p.ndcX + 1) * 0.5 * W;
+            const cy = (1 - p.ndcY) * 0.5 * H;
+            if (penUp) { ctx.moveTo(cx, cy); penUp = false; }
+            else ctx.lineTo(cx, cy);
+        }
+        ctx.strokeStyle = isLightMode
+            ? `rgba(50,50,50,${opacity.toFixed(2)})`
+            : `rgba(255,255,255,${opacity.toFixed(2)})`;
+        ctx.lineWidth = 3 * opacity;
+        ctx.stroke();
+        return true;
+    });
 }
 
 function tickTimeLapse() {
@@ -130,61 +245,7 @@ function animateGlobe() {
         });
     }
 
-    // Handle Active Pulse Animation — skip restyles while pointer is down so
-    // Plotly's drag handler isn't disrupted by per-frame restyle calls.
-    // While paused, advance startTime by the frame delta to freeze elapsed time.
-    if (pulseState) {
-        const now = performance.now();
-        if (_globePointerDown) {
-            if (pulseState._lastPauseFrame) pulseState.startTime += now - pulseState._lastPauseFrame;
-            pulseState._lastPauseFrame = now;
-        } else {
-            pulseState._lastPauseFrame = null;
-        }
-    }
-    if (pulseState && !_globePointerDown) {
-        const now = performance.now();
-        // Physics Speed: km per second
-        const speed = 300; // Reduced to 300 as requested
-
-        // Elapsed time in seconds
-        const elapsedSeconds = (now - pulseState.startTime) / 1000;
-
-        // Current radius in km
-        const currentRadius = elapsedSeconds * speed;
-
-        // Calculate progress (0 to 1)
-        const progress = currentRadius / pulseState.maxRadius;
-
-        if (progress < 1) {
-            // Generate circle
-            const circle = getCirclePoints(pulseState.lat, pulseState.lon, currentRadius);
-
-            // Fade out
-            // Use a slightly gentler fade so it stays visible longer
-            const opacity = 1 - Math.pow(progress, 1.5);
-            // Fade the width too (Simulates thinning/dissipating wave)
-            const width = 5 * opacity;
-
-            // RGBA Color String for proper opacity handling
-            const colorString = `rgba(255, 255, 255, ${opacity.toFixed(2)})`;
-
-            syncSceneCamera();
-            Plotly.restyle('chart-container', {
-                'x': [circle.x],
-                'y': [circle.y],
-                'z': [circle.z],
-                'line.color': colorString,
-                'line.width': [width],
-                'visible': true
-            }, [TRACE.PULSE]);
-        } else {
-            // Animation Complete - Ensure it's fully transparent/hidden
-            syncSceneCamera();
-            Plotly.restyle('chart-container', {'visible': false}, [TRACE.PULSE]);
-            pulseState = null;
-        }
-    }
+    drawPulses();
 
     if (tlState.active && tlState.playing) {
         tickTimeLapse();

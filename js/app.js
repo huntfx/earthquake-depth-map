@@ -360,7 +360,6 @@ function setupInteraction() {
     };
 
     graphDiv.addEventListener('pointerdown', (e) => {
-        _globePointerDown = true;
         clearTimeout(_wheelResumeTimer);
         _wheelResumeTimer = null;
         _pauseTL();
@@ -394,7 +393,6 @@ function setupInteraction() {
     });
 
     graphDiv.addEventListener('pointerup', () => {
-        _globePointerDown = false;
         _resumeTL();
         if (interactionState.isDragging) return;
         if (interactionState.pointData) {
@@ -438,12 +436,9 @@ function setupInteraction() {
     graphDiv.addEventListener('wheel', () => {
         stopAutoRotate();
         _pauseTL();
-        _globePointerDown = true;
         clearTimeout(_wheelResumeTimer);
-        // Sync camera in a microtask so it runs after Plotly's zoom handler has
-        // updated the WebGL camera — prevents a pending restyle from snapping back.
         Promise.resolve().then(syncSceneCamera);
-        _wheelResumeTimer = setTimeout(() => { _globePointerDown = false; _resumeTL(); }, 300);
+        _wheelResumeTimer = setTimeout(_resumeTL, 300);
     }, { capture: true });
 
     document.addEventListener('keydown', (e) => {

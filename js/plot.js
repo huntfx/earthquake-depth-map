@@ -358,20 +358,6 @@ function updatePlot(isInitial = false) {
         marker: { size: ghostSizes, color: 'rgba(0,0,0,0)', opacity: 0.0 }
     };
 
-    // Trace 10: Pulse Animation (Initially Empty)
-    // Changed from 'markers' (slow symbol scaling) to 'lines' (fast ring geometry)
-    const pulseTrace = {
-        type: 'scatter3d',
-        mode: 'lines',
-        x: [], y: [], z: [],
-        hoverinfo: 'none',
-        line: {
-            width: 5,
-            color: 'white'
-        },
-        opacity: 1
-    };
-
     const layout = {
         paper_bgcolor: bgColor,
         plot_bgcolor: bgColor,
@@ -412,11 +398,10 @@ function updatePlot(isInitial = false) {
         hoverinfo: 'none'
     };
 
-    // Updated Trace Order - pulseTrace is Trace 10
     Plotly.react('chart-container', [
         gridTrace, coreTrace, borderTrace, plateTrace, labelTrace,
         volcanoTrace, surfaceLineTrace, volcanoLineTrace,
-        quakeTrace, ghostTrace, pulseTrace
+        quakeTrace, ghostTrace
     ], layout, {responsive: true});
 
     invalidateMagChart();
