@@ -172,6 +172,7 @@ document.getElementById('tl-scrubber').addEventListener('input', (e) => {
     tlState.currentTime = tlState.startTime + (tlState.endTime - tlState.startTime) * (percent / 100);
     tlState.lastSoundTime = tlState.currentTime;
     tlState.lastPulseTime = tlState.currentTime;
+    restoreActivePulses();
 
     const dateStr = new Date(tlState.currentTime).toISOString().slice(0, 16).replace('T', ' ');
     document.getElementById('tl-date-display').innerText = dateStr;

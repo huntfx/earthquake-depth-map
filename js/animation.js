@@ -1,6 +1,38 @@
-let _pulseNow        = performance.now();
-let _pulseWasFrozen  = false;
+const WAVE_SPEED = 300; // km/s — shared by drawPulses and restoreActivePulses
+
+let _pulseNow         = performance.now();
+let _pulseWasFrozen   = false;
 let _pulseFreezeStart = 0;
+
+// Recreate pulses that would be in-flight at the current scrub position.
+// sortedData is ascending by time; iterate forward so older (larger-radius)
+// pulses are included alongside newer ones. The radius < maxRadius check is
+// the natural cap — no arbitrary count limit needed.
+function restoreActivePulses() {
+    pulseStates = [];
+    if (!tlState.pulseEnabled || !tlState.sortedData || !tlState.sortedData.length) return;
+
+    const T              = tlState.currentTime;
+    const windowStart    = T - tlState.windowSize;
+    const realMsPerSimMs = 1000 / tlState.speed;
+    const now            = performance.now();
+
+    for (const q of tlState.sortedData) {
+        if (q.time > T) break;
+        if (q.time <= windowStart) continue;
+        const maxRadius = Math.max(500, Math.exp(q.realMag / 1.5) * 20);
+        const realAge   = (T - q.time) * realMsPerSimMs;
+        if ((realAge / 1000) * WAVE_SPEED < maxRadius) {
+            pulseStates.push({ startTime: now - realAge, lat: q.lat, lon: q.lon, maxRadius });
+        }
+    }
+
+    // Reset freeze tracking: the freshly-restored startTimes are relative to `now`,
+    // so the pause-compensation in animateGlobe must not offset them on next play.
+    _pulseNow         = now;
+    _pulseWasFrozen   = false;
+    _pulseFreezeStart = 0;
+}
 
 // Initialise the pulse animation for a clicked earthquake.
 function triggerPulse(q) {
@@ -124,7 +156,6 @@ function drawPulses() {
     ctx.clearRect(0, 0, W, H);
 
     const now = _pulseNow;
-    const speed = 300; // km/s
 
     // Camera state for projection and far-side culling.
     const lc = getLiveCamera();
@@ -135,7 +166,7 @@ function drawPulses() {
 
     pulseStates = pulseStates.filter(pulse => {
         const elapsed  = (now - pulse.startTime) / 1000;
-        const radius   = elapsed * speed;
+        const radius   = elapsed * WAVE_SPEED;
         const progress = radius / pulse.maxRadius;
         if (progress >= 1) return false;
 
