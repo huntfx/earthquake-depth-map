@@ -332,6 +332,7 @@ document.getElementById('mag-chart').addEventListener('mousedown', async (e) => 
 
     tlState.currentTime   = targetTime;
     tlState.lastSoundTime = targetTime;
+    tlState.lastPulseTime = targetTime;
     drawMagChart();
     updateTimeLapseFrame();
 });
