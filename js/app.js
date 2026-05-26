@@ -185,7 +185,10 @@ function setupControls() {
 
     // Checkboxes
     ['labels-checkbox', 'borders-checkbox', 'plates-checkbox', 'volcanoes-checkbox', 'surface-lines-checkbox'].forEach(id => {
-        document.getElementById(id).addEventListener('change', () => updatePlot());
+        document.getElementById(id).addEventListener('change', () => {
+            if (tlState.active) updateStaticTracesForTimelapse();
+            else updatePlot();
+        });
     });
 
     // Theme toggle

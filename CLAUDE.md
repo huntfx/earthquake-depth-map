@@ -15,7 +15,7 @@ js/
   camera.js         PLOT_SCALE constant, stopAutoRotate, currentEyeDist, cameraGoTo, searchLocation/Volcano/Zone, calculateResponsiveCamera
   render.js         RenderSession (crash-resume), renderFrames, resumeRender
   timelapse.js      startTimeLapse, stopTimeLapse, updateTimeLapseFrame + timelapse event listeners
-  plot.js           fetchDataAndPlot, updatePlot (builds all 11 Plotly traces)
+  plot.js           fetchDataAndPlot, updatePlot (builds all 10 Plotly traces), updateStaticTracesForTimelapse
   animation.js      triggerPulse, animateGlobe (rAF loop), getCirclePoints (pulse wave)
   app.js            executeFlyTo (top-level), initApp, initResumeCheck, all remaining UI event listeners
 ```
@@ -35,8 +35,8 @@ Scripts are loaded as plain `<script>` tags in dependency order — **not ES mod
 7  volcanoLineTrace depth lines (volcanoes)
 8  quakeTrace       earthquake markers (main data trace)
 9  ghostTrace       invisible oversized markers for hover hit area
-10 pulseTrace       seismic wave ring animation
 ```
+Pulse/shockwave animation is a separate canvas overlay (`#pulse-canvas`), not a Plotly trace. It is drawn by `drawPulses()` in `animation.js` every rAF frame using a manual perspective projection from `getLiveCamera()`.
 
 ## Critical: camera logic is brittle
 The camera/rotation system (`searchLocation`, `searchVolcano`, `searchZone`, GPS handler, `animateGlobe` rotation, `plotly_relayout` tracking, and `executeFlyTo`) is known to be fragile. It works correctly but has broken repeatedly when modified, even when changes seemed unrelated. **Do not refactor camera logic without explicit instruction.** If asked to refactor it, treat it as a dedicated task.
@@ -50,6 +50,7 @@ The camera/rotation system (`searchLocation`, `searchVolcano`, `searchZone`, GPS
 ## Known quirks
 - `render.js` crash-resume exists because the renderer has a memory leak on long runs — the session system lets the user restart mid-sequence without losing progress. Keep this in mind before simplifying it.
 - The timelapse system (`timelapse.js`) does not touch auto-rotation state — it runs alongside whatever the globe is already doing.
+- **Never call `Plotly.react` during timelapse to update static traces.** `Plotly.react` processes the full layout and fires `plotly_relayout` with a camera value that races with `animateGlobe`'s continuous `Plotly.relayout` calls, causing the camera to snap. Use `updateStaticTracesForTimelapse()` (in `plot.js`) instead — it uses `Plotly.restyle` which only touches trace data and never fires camera events. Checkbox listeners in `app.js` already route through this function when `tlState.active`.
 
 ## Stack
 - [Plotly.js 2.27.0](https://cdn.plot.ly/plotly-2.27.0.min.js) — loaded from CDN, available as global `Plotly`

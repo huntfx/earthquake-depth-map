@@ -376,9 +376,15 @@ async function updatePlot(isInitial = false) {
     if (isInitial) {
         currentCamera = calculateResponsiveCamera();
         layout.scene.camera = currentCamera;
-    } else {
-        // Use the live WebGL camera to avoid snapping when Plotly.react re-applies the layout.
+    } else if (!tlState.active) {
         layout.scene.camera = getLiveCamera();
+    } else {
+        // During timelapse: omit the camera from the layout entirely and preserve
+        // the existing uirevision so Plotly doesn't reset interaction state.
+        // syncSceneCamera() (called below) has already written the live camera to
+        // _fullLayout.scene.camera, which Plotly.react will use when uirevision is unchanged.
+        const gd = getChartDiv();
+        if (gd._fullLayout) layout.uirevision = gd._fullLayout.uirevision;
     }
 
     // --- OCCLUSION CORE (Trace 1) ---
@@ -413,5 +419,69 @@ async function updatePlot(isInitial = false) {
     // After rebuilding static traces, restore timelapse quake window if active.
     if (tlState.active && !isInitial) {
         await updateTimeLapseFrame();
+    }
+}
+
+// During timelapse, update only the static/visual traces via Plotly.restyle so the
+// layout (and therefore the camera) is never touched.
+function updateStaticTracesForTimelapse() {
+    const depthScale       = parseFloat(document.getElementById('depth-slider').value);
+    const bordersEnabled   = document.getElementById('borders-checkbox').checked;
+    const platesEnabled    = document.getElementById('plates-checkbox').checked;
+    const volcanoesEnabled = document.getElementById('volcanoes-checkbox').checked;
+    const showLabels       = document.getElementById('labels-checkbox').checked;
+    const showSurfaceLines = document.getElementById('surface-lines-checkbox').checked;
+    const selectedPalette  = document.getElementById('color-select').value;
+    const colorMode        = document.getElementById('color-mode').value;
+
+    const borderColor = isLightMode ? '#666'    : '#008888';
+    const plateColor  = isLightMode ? '#2288cc' : '#1565C0';
+    const volcColor   = isLightMode ? 'white'   : 'black';
+    const volcLine    = isLightMode ? 'black'   : 'white';
+    const borderWidth = bordersEnabled ? BASE_BORDER_WIDTH : 0;
+    const plateWidth  = platesEnabled  ? BASE_PLATE_WIDTH  : 0;
+    const labelSize   = showLabels     ? 12                : 0;
+
+    syncSceneCamera();
+
+    Plotly.restyle('chart-container', { visible: bordersEnabled, 'line.color': borderColor, 'line.width': borderWidth }, [TRACE.BORDER]);
+    Plotly.restyle('chart-container', { visible: platesEnabled,  'line.color': plateColor,  'line.width': plateWidth  }, [TRACE.PLATE]);
+    Plotly.restyle('chart-container', { visible: labelSize > 0,  'textfont.size': labelSize                           }, [TRACE.LABEL]);
+
+    if (volcanoesEnabled) {
+        const vx = [], vy = [], vz = [], vtext = [], vCustom = [];
+        const vlx = [], vly = [], vlz = [];
+        rawVolcanoData.forEach(v => {
+            const r = EARTH_RADIUS + ((v.elev / 1000) * depthScale);
+            const [x, y, z] = latLonToXYZ(v.lat, v.lon, r);
+            vx.push(x); vy.push(y); vz.push(z);
+            vtext.push(`<b>${v.name}</b><br>Type: ${v.type}<br>Elevation: ${v.elev}m`);
+            vCustom.push({ type: 'volcano', name: v.name, lat: v.lat, lon: v.lon, elev: v.elev, volcType: v.type, status: v.status });
+            if (showSurfaceLines) {
+                const [sx, sy, sz] = latLonToXYZ(v.lat, v.lon, EARTH_RADIUS);
+                vlx.push(sx, x, null); vly.push(sy, y, null); vlz.push(sz, z, null);
+            }
+        });
+        Plotly.restyle('chart-container', { x: [vx], y: [vy], z: [vz], text: [vtext], customdata: [vCustom], 'marker.color': volcColor, 'marker.line.color': volcLine, visible: true }, [TRACE.VOLCANO]);
+        Plotly.restyle('chart-container', { x: [vlx], y: [vly], z: [vlz], visible: showSurfaceLines }, [TRACE.VOLCANO_LINE]);
+    } else {
+        Plotly.restyle('chart-container', { visible: false }, [TRACE.VOLCANO]);
+        Plotly.restyle('chart-container', { visible: false }, [TRACE.VOLCANO_LINE]);
+    }
+
+    if (showSurfaceLines) {
+        const slx = [], sly = [], slz = [], lineColors = [];
+        const { cmin, cmax } = getColorRange(colorMode);
+        rawQuakeData.forEach(q => {
+            const r = EARTH_RADIUS - (q.depth * depthScale);
+            const [x, y, z] = latLonToXYZ(q.lat, q.lon, r);
+            const [sx, sy, sz] = latLonToXYZ(q.lat, q.lon, EARTH_RADIUS);
+            const val = colorMode === 'depth' ? q.depth : colorMode === 'mag' ? q.mag : q.time;
+            slx.push(sx, x, null); sly.push(sy, y, null); slz.push(sz, z, null);
+            lineColors.push(val, val, val);
+        });
+        Plotly.restyle('chart-container', { x: [slx], y: [sly], z: [slz], 'line.color': [lineColors], 'line.colorscale': selectedPalette, 'line.cmin': cmin, 'line.cmax': cmax, visible: true }, [TRACE.SURFACE_LINE]);
+    } else {
+        Plotly.restyle('chart-container', { visible: false }, [TRACE.SURFACE_LINE]);
     }
 }
