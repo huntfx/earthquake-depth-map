@@ -106,7 +106,7 @@ async function fetchDataAndPlot(isInitial = false) {
     }
 }
 
-function updatePlot(isInitial = false) {
+async function updatePlot(isInitial = false) {
 
     const depthScale = parseFloat(document.getElementById('depth-slider').value);
     const baseSize = parseFloat(document.getElementById('size-slider').value);
@@ -375,8 +375,11 @@ function updatePlot(isInitial = false) {
 
     if (isInitial) {
         currentCamera = calculateResponsiveCamera();
+        layout.scene.camera = currentCamera;
+    } else {
+        // Use the live WebGL camera to avoid snapping when Plotly.react re-applies the layout.
+        layout.scene.camera = getLiveCamera();
     }
-    layout.scene.camera = currentCamera;
 
     // --- OCCLUSION CORE (Trace 1) ---
     // A single giant point at the center of the earth.
@@ -397,7 +400,8 @@ function updatePlot(isInitial = false) {
         hoverinfo: 'none'
     };
 
-    Plotly.react('chart-container', [
+    if (!isInitial) syncSceneCamera();
+    await Plotly.react('chart-container', [
         gridTrace, coreTrace, borderTrace, plateTrace, labelTrace,
         volcanoTrace, surfaceLineTrace, volcanoLineTrace,
         quakeTrace, ghostTrace
@@ -408,6 +412,6 @@ function updatePlot(isInitial = false) {
 
     // After rebuilding static traces, restore timelapse quake window if active.
     if (tlState.active && !isInitial) {
-        updateTimeLapseFrame();
+        await updateTimeLapseFrame();
     }
 }
