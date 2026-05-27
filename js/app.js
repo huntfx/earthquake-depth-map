@@ -2,9 +2,6 @@
 let _tlPausedForInteraction = false;
 let _tlRestyling            = false; // true while a timelapse Plotly.restyle is in-flight
 let _wheelResumeTimer       = null;
-let _inertiaTimer           = null;
-let _prevInertiaEye         = null;
-let _dragSyncRaf            = 0;
 
 function _pauseTL() {
     if (tlState.active && tlState.playing) {
@@ -19,22 +16,7 @@ function _resumeTL() {
         tlState.playing = true;
         _tlPausedForInteraction = false;
         document.getElementById('tl-play-btn').innerText = '❚❚';
-        _stopDragSync();
     }
-}
-
-// Continuously sync _fullLayout.scene.camera to the live WebGL camera every rAF
-// frame during drag and inertia, so _fullLayout.scene.camera is current when the
-// setCamera guard is lifted and the first post-inertia restyle fires.
-function _continuousDragSync() {
-    if (!tlState.active) { _dragSyncRaf = 0; return; }
-    syncSceneCamera();
-    _dragSyncRaf = requestAnimationFrame(_continuousDragSync);
-}
-
-function _stopDragSync() {
-    cancelAnimationFrame(_dragSyncRaf);
-    _dragSyncRaf = 0;
 }
 
 // Patch glplot.camera.lookAt — the primitive Plotly 2.27 uses to re-apply the layout
@@ -49,25 +31,6 @@ function _applySetCameraGuard() {
     const origLookAt = glcam.lookAt.bind(glcam);
     glcam.lookAt = (...args) => { if (!_tlRestyling) origLookAt(...args); };
     glcam._lookAtGuarded = true;
-}
-
-// Poll getLiveCamera() until the camera stops moving (inertia settled),
-// then resume timelapse. Called after pointerup to avoid restyle fighting inertia.
-function _waitForInertiaEnd() {
-    const lc = getLiveCamera();
-    const eye = lc.eye;
-    if (_prevInertiaEye) {
-        const de = Math.abs(eye.x - _prevInertiaEye.x) +
-                   Math.abs(eye.y - _prevInertiaEye.y) +
-                   Math.abs(eye.z - _prevInertiaEye.z);
-        if (de < 0.001) {
-            _prevInertiaEye = null;
-            _resumeTL();
-            return;
-        }
-    }
-    _prevInertiaEye = { x: eye.x, y: eye.y, z: eye.z };
-    _inertiaTimer = setTimeout(_waitForInertiaEnd, 50);
 }
 
 // --- UI Logic ---
@@ -418,19 +381,8 @@ function setupInteraction() {
     graphDiv.addEventListener('pointerdown', (e) => {
         clearTimeout(_wheelResumeTimer);
         _wheelResumeTimer = null;
-        clearTimeout(_inertiaTimer);
-        _inertiaTimer = null;
-        _prevInertiaEye = null;
         _pauseTL();
-        if (tlState.active) {
-            // Guard scene.setCamera so in-flight Plotly.restyle calls cannot snap the
-            // WebGL camera while the user is dragging or coasting through inertia.
-            _applySetCameraGuard();
-            // Also keep _fullLayout.scene.camera synced so it's current when the guard
-            // is lifted and the first post-inertia restyle fires.
-            _stopDragSync();
-            _continuousDragSync();
-        }
+        if (tlState.active) _applySetCameraGuard();
         stopAutoRotate();
         const panel = document.getElementById('side-panel');
         if (panel.classList.contains('open')) {
@@ -461,13 +413,7 @@ function setupInteraction() {
     });
 
     graphDiv.addEventListener('pointerup', () => {
-        // Resume timelapse only after inertia settles to prevent Plotly.restyle
-        // from snapping the camera back during the inertia spin.
-        clearTimeout(_inertiaTimer);
-        _prevInertiaEye = null;
-        if (_tlPausedForInteraction) {
-            _inertiaTimer = setTimeout(_waitForInertiaEnd, 50);
-        }
+        _resumeTL();
         if (interactionState.isDragging) return;
         if (interactionState.pointData) {
             executeFlyTo(interactionState.pointData);

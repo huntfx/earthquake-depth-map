@@ -28,11 +28,11 @@ async function startTimeLapse() {
     });
 
     syncSceneCamera();
-    await Plotly.restyle('chart-container', { visible: false }, [TRACE.SURFACE_LINE, TRACE.GHOST]);
-    await updateTimeLapseFrame();
-    // Apply setCamera guard here, after the scene exists, so every subsequent
-    // Plotly.restyle call is blocked from snapping the camera during interaction.
     _applySetCameraGuard();
+    _tlRestyling = true;
+    await Plotly.restyle('chart-container', { visible: false }, [TRACE.SURFACE_LINE, TRACE.GHOST]);
+    _tlRestyling = false;
+    await updateTimeLapseFrame();
 }
 
 function stopTimeLapse() {
