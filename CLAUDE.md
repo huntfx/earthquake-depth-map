@@ -47,6 +47,18 @@ The camera/rotation system (`searchLocation`, `searchVolcano`, `searchZone`, GPS
 - **Always send a full camera object to `Plotly.relayout`.** Passing a partial key like `'scene.camera.eye'` (instead of `'scene.camera'`) bypasses the `plotly_relayout` handler's Case 1 path and leaves `_fullLayout.scene.camera` stale. The animation loop (`animateGlobe`) does this correctly — don't change it back to a partial key.
 - **`executeFlyTo` and `cameraGoTo` have different behaviours** — `cameraGoTo` reorients the globe to face the location; `executeFlyTo` only shifts the center (look-at point) while keeping eye fixed. They must remain separate.
 
+### Plotly 2.27.0 camera internals (verified by debugging)
+- **`gd._fullLayout.scene.setCamera` does not exist** in Plotly 2.27.0. Neither does `gd._fullLayout.scene._scene.setCamera`. Do not try to patch or call `setCamera` — it will silently fail.
+- **The actual camera-move primitive is `gd._fullLayout.scene._scene.glplot.camera.lookAt(eye, center, up)`** — this is what Plotly calls internally to re-apply `_fullLayout.scene.camera` after every `Plotly.restyle()`, causing the camera snap.
+- **`gd._fullLayout.scene._scene`** is the gl-plot3d inner scene (no Plotly wrapper methods). **`gd._fullLayout.scene._scene.glplot.camera`** is the camera-3d instance with `lookAt`, `rotate`, `translate`, etc.
+- **`getLiveCamera()` cannot read the live WebGL camera during drag or inertia.** `camera.params` (and all other Plotly/gl-plot3d paths) are only updated when `lookAt` is called programmatically — not during interactive orbit. All paths fall through to `currentCamera` during drag/inertia. Do not rely on `getLiveCamera()` for inertia detection.
+
+### Timelapse camera snap — how it works and how it is fixed
+- **Root cause:** Every `Plotly.restyle()` call triggers an internal `glplot.camera.lookAt(_fullLayout.scene.camera)`. After a drag + inertia, `_fullLayout.scene.camera` holds the drag-release position, so the first restyle after timelapse resumes snaps the camera back to that stale position.
+- **Fix (in `app.js`):** `_applySetCameraGuard()` patches `glplot.camera.lookAt` with a guard that checks the module-level flag `_tlRestyling`. When `_tlRestyling = true` (set in `updateTimeLapseFrame` around every `Plotly.restyle` call), `lookAt` is a no-op — the camera cannot be moved by a restyle. The guard is applied on `startTimeLapse()` and re-applied on every `pointerdown` in case the camera object was recreated.
+- **`_tlRestyling`** is the flag (declared in `app.js`). It is `true` only while a timelapse restyle is in-flight. It is `false` at all other times, so auto-rotation relayouts and user interaction still move the camera normally.
+- Do not remove or bypass the `_tlRestyling = true / false` wrapping around restyles in `updateTimeLapseFrame` — doing so will immediately re-introduce the snap.
+
 ## Known quirks
 - `render.js` crash-resume exists because the renderer has a memory leak on long runs — the session system lets the user restart mid-sequence without losing progress. Keep this in mind before simplifying it.
 - The timelapse system (`timelapse.js`) does not touch auto-rotation state — it runs alongside whatever the globe is already doing.

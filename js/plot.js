@@ -107,6 +107,11 @@ async function fetchDataAndPlot(isInitial = false) {
 }
 
 async function updatePlot(isInitial = false) {
+    if (tlState.active && !isInitial) {
+        updateStaticTracesForTimelapse();
+        await updateTimeLapseFrame();
+        return;
+    }
 
     const depthScale = parseFloat(document.getElementById('depth-slider').value);
     const baseSize = parseFloat(document.getElementById('size-slider').value);
@@ -370,21 +375,12 @@ async function updatePlot(isInitial = false) {
             dragmode: 'orbit'
         },
         showlegend: false,
-        uirevision: 'true' // Add uirevision to allow user interaction to persist across updates
+        uirevision: 'true'
     };
 
     if (isInitial) {
         currentCamera = calculateResponsiveCamera();
         layout.scene.camera = currentCamera;
-    } else if (!tlState.active) {
-        layout.scene.camera = getLiveCamera();
-    } else {
-        // During timelapse: omit the camera from the layout entirely and preserve
-        // the existing uirevision so Plotly doesn't reset interaction state.
-        // syncSceneCamera() (called below) has already written the live camera to
-        // _fullLayout.scene.camera, which Plotly.react will use when uirevision is unchanged.
-        const gd = getChartDiv();
-        if (gd._fullLayout) layout.uirevision = gd._fullLayout.uirevision;
     }
 
     // --- OCCLUSION CORE (Trace 1) ---
@@ -406,12 +402,23 @@ async function updatePlot(isInitial = false) {
         hoverinfo: 'none'
     };
 
+    // Snapshot the camera before Plotly.react — the react call fires plotly_relayout
+    // with whatever camera Plotly's uirevision state chooses, which may not match the
+    // current view. We restore it immediately after so the browser never paints the snap.
+    const _cameraBeforeReact = isInitial ? null
+        : { eye: { ...currentCamera.eye }, center: { ...currentCamera.center }, up: { ...currentCamera.up } };
+
     if (!isInitial) syncSceneCamera();
     await Plotly.react('chart-container', [
         gridTrace, coreTrace, borderTrace, plateTrace, labelTrace,
         volcanoTrace, surfaceLineTrace, volcanoLineTrace,
         quakeTrace, ghostTrace
     ], layout, {responsive: true});
+
+    if (_cameraBeforeReact) {
+        currentCamera = _cameraBeforeReact;
+        await Plotly.relayout('chart-container', { 'scene.camera': _cameraBeforeReact });
+    }
 
     invalidateMagChart();
     drawMagChart();

@@ -18,19 +18,34 @@ function stopAutoRotate() {
     document.getElementById('rotate-btn').innerHTML = '▶';
 }
 
-// Returns the live WebGL camera (eye/center/up) directly from gl-plot3d's scene object,
-// bypassing _fullLayout.scene.camera (only updated by relayout) and currentCamera
-// (only updated by plotly_relayout, which doesn't fire during drag/zoom animations).
-// Falls back to currentCamera if the internal scene isn't available.
+// Returns the best available camera reading. Falls back to currentCamera if the
+// internal scene objects aren't reachable (they are stale during drag/inertia anyway).
 function getLiveCamera() {
     const gd = getChartDiv();
     const s  = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene._scene;
-    if (s && typeof s.getCamera === 'function') return s.getCamera();
+
+    if (s && typeof s.getCamera === 'function') {
+        const c = s.getCamera();
+        if (c && c.eye && typeof c.eye.x === 'number') return c;
+    }
+
+    const glplot = s && s.glplot;
+    const cam    = glplot && glplot.camera;
+    const p      = cam && cam.params;
+    if (p && p.eye) {
+        const toVec = (v) => Array.isArray(v) ? { x: v[0], y: v[1], z: v[2] } : { x: v.x, y: v.y, z: v.z };
+        return { eye: toVec(p.eye), center: toVec(p.center), up: toVec(p.up) };
+    }
+
     return { eye: { ...currentCamera.eye }, center: { ...currentCamera.center }, up: { ...currentCamera.up } };
 }
 
-// Writes the live WebGL camera into _fullLayout.scene.camera so any immediately
-// following Plotly.restyle uses the correct position and doesn't snap the view.
+// Writes currentCamera into _fullLayout.scene.camera so any immediately following
+// Plotly.restyle uses the correct position and doesn't snap the view.
+// currentCamera is always synchronously updated by plotly_relayout (fired during both
+// auto-rotate relayouts and manual orbit). getLiveCamera() / s.getCamera() lags by one
+// WebGL paint frame behind auto-rotate relayouts, so using it here would overwrite
+// _fullLayout.scene.camera with the pre-rotate position and cause a snap.
 function syncSceneCamera() {
     const gd = getChartDiv();
     const lc = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene.camera;
@@ -146,7 +161,6 @@ function searchZone() {
 
 function searchNotable() {
     document.getElementById('quake-info').style.display = 'none';
-    if (tlState.active) stopTimeLapse();
 
     const input = document.getElementById('notable-input');
     const btn = document.getElementById('notable-btn');

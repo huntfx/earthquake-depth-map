@@ -1,4 +1,5 @@
-const WAVE_SPEED = 300; // km/s — shared by drawPulses and restoreActivePulses
+const WAVE_SPEED    = 300; // km/s — shared by drawPulses and restoreActivePulses
+const RING_SPACING  = 180; // km — spacing between rings; inter-ring delay = RING_SPACING / WAVE_SPEED s
 
 let _pulseNow         = performance.now();
 let _pulseWasFrozen   = false;
@@ -13,17 +14,30 @@ function restoreActivePulses() {
     if (!tlState.pulseEnabled || !tlState.sortedData || !tlState.sortedData.length) return;
 
     const T              = tlState.currentTime;
-    const windowStart    = T - tlState.windowSize;
     const realMsPerSimMs = 1000 / tlState.speed;
     const now            = performance.now();
 
+    // Waves from large quakes can still be expanding long after the quake has
+    // scrolled past the display window. Compute the furthest back we need to
+    // look: the sim-time equivalent of the longest possible wave duration.
+    const datasetMaxRadius  = Math.max(500, Math.exp(stats.maxMag / 1.5) * 20);
+    const pulseWindowStart  = T - (datasetMaxRadius / WAVE_SPEED) * 1000 / realMsPerSimMs;
+
+    const ringDelayMs = (RING_SPACING / WAVE_SPEED) * 1000;
+
     for (const q of tlState.sortedData) {
         if (q.time > T) break;
-        if (q.time <= windowStart) continue;
+        if (q.time <= pulseWindowStart) continue;
         const maxRadius = Math.max(500, Math.exp(q.realMag / 1.5) * 20);
         const realAge   = (T - q.time) * realMsPerSimMs;
-        if ((realAge / 1000) * WAVE_SPEED < maxRadius) {
-            pulseStates.push({ startTime: now - realAge, lat: q.lat, lon: q.lon, maxRadius });
+        const rings     = q.realMag >= 7.5 ? 3 : q.realMag >= 6.0 ? 2 : 1;
+        for (let k = 0; k < rings; k++) {
+            const ringAge = realAge - k * ringDelayMs;
+            if (ringAge < 0) continue; // this ring hasn't fired yet
+            const radius  = (ringAge / 1000) * WAVE_SPEED;
+            if (radius < maxRadius) {
+                pulseStates.push({ startTime: now - ringAge, lat: q.lat, lon: q.lon, maxRadius, mag: q.realMag });
+            }
         }
     }
 
@@ -35,15 +49,16 @@ function restoreActivePulses() {
 }
 
 // Initialise the pulse animation for a clicked earthquake.
+// M6+ emits 2 rings, M7.5+ emits 3. Each ring fires RING_SPACING/WAVE_SPEED seconds after the previous.
 function triggerPulse(q) {
     if (!q || q.type === 'volcano') return;
-    const animMaxRadius = Math.max(500, Math.exp(q.realMag / 1.5) * 20);
-    pulseStates.push({
-        startTime: performance.now(),
-        lat: q.lat,
-        lon: q.lon,
-        maxRadius: animMaxRadius
-    });
+    const maxRadius   = Math.max(500, Math.exp(q.realMag / 1.5) * 20);
+    const rings       = q.realMag >= 7.5 ? 3 : q.realMag >= 6.0 ? 2 : 1;
+    const now         = performance.now();
+    const ringDelayMs = (RING_SPACING / WAVE_SPEED) * 1000;
+    for (let k = 0; k < rings; k++) {
+        pulseStates.push({ startTime: now + k * ringDelayMs, lat: q.lat, lon: q.lon, maxRadius, mag: q.realMag });
+    }
 }
 
 // Helper function to generate circle points on sphere
@@ -166,12 +181,14 @@ function drawPulses() {
 
     pulseStates = pulseStates.filter(pulse => {
         const elapsed  = (now - pulse.startTime) / 1000;
+        if (elapsed < 0) return true; // ring not yet fired — keep pending
         const radius   = elapsed * WAVE_SPEED;
         const progress = radius / pulse.maxRadius;
         if (progress >= 1) return false;
 
-        const opacity = 1 - Math.pow(progress, 1.5);
-        const pts     = getCirclePoints(pulse.lat, pulse.lon, radius);
+        const opacity   = 1 - Math.pow(progress, 1.5);
+        const lineWidth = Math.max(1, pulse.mag * 0.7);
+        const pts       = getCirclePoints(pulse.lat, pulse.lon, radius);
 
         ctx.beginPath();
         let penUp = true;
@@ -190,7 +207,7 @@ function drawPulses() {
         ctx.strokeStyle = isLightMode
             ? `rgba(50,50,50,${opacity.toFixed(2)})`
             : `rgba(255,255,255,${opacity.toFixed(2)})`;
-        ctx.lineWidth = 3 * opacity;
+        ctx.lineWidth = lineWidth * opacity;
         ctx.stroke();
         return true;
     });

@@ -24,19 +24,21 @@ async function startTimeLapse() {
     // baseline rather than snapping back to its previous interaction state.
     await Plotly.relayout('chart-container', {
         'uirevision': Date.now().toString(),
-        'scene.camera': getLiveCamera()
+        'scene.camera': { eye: { ...currentCamera.eye }, center: { ...currentCamera.center }, up: { ...currentCamera.up } }
     });
 
     syncSceneCamera();
     await Plotly.restyle('chart-container', { visible: false }, [TRACE.SURFACE_LINE, TRACE.GHOST]);
     await updateTimeLapseFrame();
+    // Apply setCamera guard here, after the scene exists, so every subsequent
+    // Plotly.restyle call is blocked from snapping the camera during interaction.
+    _applySetCameraGuard();
 }
 
 function stopTimeLapse() {
     tlState.active = false;
     tlState.playing = false;
     document.getElementById('timelapse-bar').classList.remove('active');
-    updatePlot();
 }
 
 async function updateTimeLapseFrame() {
@@ -96,10 +98,9 @@ async function updateTimeLapseFrame() {
         }
     }
 
-    // Sync _fullLayout.scene.camera to the live WebGL position so the restyle
-    // re-applies exactly what's already on screen — no snap.
-    syncSceneCamera();
-
+    // _tlRestyling blocks scene._scene.setCamera inside Plotly.restyle so the data
+    // update cannot snap the WebGL camera to _fullLayout.scene.camera.
+    _tlRestyling = true;
     await Plotly.restyle('chart-container', {
         x: [qx], y: [qy], z: [qz],
         'marker.size':              [sizes],
@@ -112,6 +113,7 @@ async function updateTimeLapseFrame() {
         'marker.colorbar.tickvals': tickvals,
         'marker.colorbar.ticktext': ticktext
     }, [TRACE.QUAKE]);
+    _tlRestyling = false;
 
     if (document.getElementById('surface-lines-checkbox').checked) {
         const slx = [], sly = [], slz = [], slColors = [];
@@ -122,6 +124,7 @@ async function updateTimeLapseFrame() {
             slx.push(sx, x, null); sly.push(sy, y, null); slz.push(sz, z, null);
             slColors.push(val, val, val);
         });
+        _tlRestyling = true;
         await Plotly.restyle('chart-container', {
             x: [slx], y: [sly], z: [slz],
             'line.color':      [slColors],
@@ -130,12 +133,16 @@ async function updateTimeLapseFrame() {
             'line.cmax':       cmax,
             visible:           true
         }, [TRACE.SURFACE_LINE]);
+        _tlRestyling = false;
     }
 }
 
 // --- Event Listeners ---
 document.getElementById('timelapse-mode-btn').addEventListener('click', startTimeLapse);
-document.getElementById('tl-close-btn').addEventListener('click', stopTimeLapse);
+document.getElementById('tl-close-btn').addEventListener('click', () => {
+    stopTimeLapse();
+    updatePlot();
+});
 
 document.getElementById('tl-play-btn').addEventListener('click', () => {
     tlState.playing = !tlState.playing;
@@ -178,4 +185,5 @@ document.getElementById('tl-scrubber').addEventListener('input', (e) => {
     document.getElementById('tl-date-display').innerText = dateStr;
 
     updateTimeLapseFrame();
+    drawMagChart();
 });
