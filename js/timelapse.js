@@ -27,7 +27,6 @@ async function startTimeLapse() {
         'scene.camera': { eye: { ...currentCamera.eye }, center: { ...currentCamera.center }, up: { ...currentCamera.up } }
     });
 
-    syncSceneCamera();
     _applySetCameraGuard();
     _tlRestyling = true;
     await Plotly.restyle('chart-container', { visible: false }, [TRACE.SURFACE_LINE, TRACE.GHOST]);

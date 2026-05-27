@@ -105,8 +105,7 @@ function executeFlyTo(q) {
         z: (z / EARTH_RADIUS) * PLOT_SCALE
     };
 
-    const liveCam   = getLiveCamera();
-    const newCamera = { eye: { ...liveCam.eye }, center: newCenter, up: { ...liveCam.up } };
+    const newCamera = { eye: { ...currentCamera.eye }, center: newCenter, up: { ...currentCamera.up } };
 
     currentCamera = newCamera;
     Plotly.relayout('chart-container', { 'scene.camera': newCamera });
@@ -458,7 +457,6 @@ function setupInteraction() {
         stopAutoRotate();
         _pauseTL();
         clearTimeout(_wheelResumeTimer);
-        Promise.resolve().then(syncSceneCamera);
         _wheelResumeTimer = setTimeout(_resumeTL, 300);
     }, { capture: true });
 

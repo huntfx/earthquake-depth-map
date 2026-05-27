@@ -18,48 +18,33 @@ function stopAutoRotate() {
     document.getElementById('rotate-btn').innerHTML = '▶';
 }
 
-// Returns the best available camera reading. Falls back to currentCamera if the
-// internal scene objects aren't reachable (they are stale during drag/inertia anyway).
+// Returns the best available camera reading for rendering purposes (pulse projection,
+// frame capture). Tries the Plotly scene's getCamera() which tracks the live WebGL
+// state during drag. Falls back to currentCamera (updated by plotly_relayout) if the
+// internal scene isn't available.
 function getLiveCamera() {
-    const gd = getChartDiv();
-    const s  = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene._scene;
-
+    const s = getChartDiv()._fullLayout?.scene?._scene;
     if (s && typeof s.getCamera === 'function') {
         const c = s.getCamera();
         if (c && c.eye && typeof c.eye.x === 'number') return c;
     }
-
-    const glplot = s && s.glplot;
-    const cam    = glplot && glplot.camera;
-    const p      = cam && cam.params;
-    if (p && p.eye) {
-        const toVec = (v) => Array.isArray(v) ? { x: v[0], y: v[1], z: v[2] } : { x: v.x, y: v.y, z: v.z };
-        return { eye: toVec(p.eye), center: toVec(p.center), up: toVec(p.up) };
-    }
-
     return { eye: { ...currentCamera.eye }, center: { ...currentCamera.center }, up: { ...currentCamera.up } };
 }
 
 // Writes currentCamera into _fullLayout.scene.camera so any immediately following
-// Plotly.restyle uses the correct position and doesn't snap the view.
-// currentCamera is always synchronously updated by plotly_relayout (fired during both
-// auto-rotate relayouts and manual orbit). getLiveCamera() / s.getCamera() lags by one
-// WebGL paint frame behind auto-rotate relayouts, so using it here would overwrite
-// _fullLayout.scene.camera with the pre-rotate position and cause a snap.
+// Plotly.restyle or Plotly.react re-applies the correct position instead of snapping.
 function syncSceneCamera() {
-    const gd = getChartDiv();
-    const lc = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene.camera;
+    const lc = getChartDiv()._fullLayout?.scene?.camera;
     if (!lc) return;
-    const live = getLiveCamera();
-    lc.eye    = { ...live.eye };
-    lc.center = { ...live.center };
-    lc.up     = { ...live.up };
+    lc.eye    = { ...currentCamera.eye };
+    lc.center = { ...currentCamera.center };
+    lc.up     = { ...currentCamera.up };
 }
 
 // Returns the current eye-to-origin distance, used to preserve zoom when navigating.
 function currentEyeDist() {
-    const cam = getLiveCamera();
-    return Math.sqrt(cam.eye.x ** 2 + cam.eye.y ** 2 + cam.eye.z ** 2);
+    const e = currentCamera.eye;
+    return Math.sqrt(e.x ** 2 + e.y ** 2 + e.z ** 2);
 }
 
 // Move the camera to face a lat/lon surface point at the given zoom distance.
