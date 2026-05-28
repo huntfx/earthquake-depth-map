@@ -306,6 +306,7 @@ function animateGlobe() {
     }
 
     drawPulses();
+    drawCSOverlay();
 
     if (tlState.active && tlState.playing) {
         tickTimeLapse();

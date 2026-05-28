@@ -17,6 +17,7 @@ js/
   timelapse.js      startTimeLapse, stopTimeLapse, updateTimeLapseFrame + timelapse event listeners
   plot.js           fetchDataAndPlot, updatePlot (builds all 10 Plotly traces), updateStaticTracesForTimelapse
   animation.js      triggerPulse, animateGlobe (rAF loop), getCirclePoints (pulse wave)
+  cross-section.js  Depth profile panel: csState, _raySphereLatLon, drawCSOverlay, computeAndDrawCrossSection
   app.js            executeFlyTo (top-level), initApp, initResumeCheck, all remaining UI event listeners
 ```
 
@@ -36,7 +37,7 @@ Scripts are loaded as plain `<script>` tags in dependency order — **not ES mod
 8  quakeTrace       earthquake markers (main data trace)
 9  ghostTrace       invisible oversized markers for hover hit area
 ```
-Pulse/shockwave animation is a separate canvas overlay (`#pulse-canvas`), not a Plotly trace. It is drawn by `drawPulses()` in `animation.js` every rAF frame using a manual perspective projection from `getLiveCamera()`.
+Pulse/shockwave animation is a separate canvas overlay (`#pulse-canvas`), not a Plotly trace. It is drawn by `drawPulses()` in `animation.js` every rAF frame using a manual perspective projection from `getLiveCamera()`. The cross-section A/B markers and great-circle arc are also drawn on `#pulse-canvas` by `drawCSOverlay()`, called immediately after `drawPulses()` in `animateGlobe`.
 
 ## Critical: camera logic is brittle
 The camera/rotation system (`searchLocation`, `searchVolcano`, `searchZone`, GPS handler, `animateGlobe` rotation, `plotly_relayout` tracking, and `executeFlyTo`) is known to be fragile. It works correctly but has broken repeatedly when modified, even when changes seemed unrelated. **Do not refactor camera logic without explicit instruction.** If asked to refactor it, treat it as a dedicated task.
@@ -59,6 +60,24 @@ The camera/rotation system (`searchLocation`, `searchVolcano`, `searchZone`, GPS
 - **Fix (in `app.js`):** `_applySetCameraGuard()` patches `glplot.camera.lookAt` with a guard that checks the module-level flag `_tlRestyling`. When `_tlRestyling = true` (set in `updateTimeLapseFrame` around every `Plotly.restyle` call), `lookAt` is a no-op — the camera cannot be moved by a restyle. The guard is applied on `startTimeLapse()` and re-applied on every `pointerdown` in case the camera object was recreated.
 - **`_tlRestyling`** is the flag (declared in `app.js`). It is `true` only while a timelapse restyle is in-flight. It is `false` at all other times, so auto-rotation relayouts and user interaction still move the camera normally.
 - Do not remove or bypass the `_tlRestyling = true / false` wrapping around restyles in `updateTimeLapseFrame` — doing so will immediately re-introduce the snap.
+
+## Cross-section depth profile
+
+`cross-section.js` implements a two-point depth profile panel. Key details:
+
+- **`csState.phase`** lifecycle: `0` = closed, `1` = placing A, `2` = placing B, `3` = view + drag.
+- **`_raySphereLatLon(sx, sy, W, H, lc)`** — inverse of `_project3D`. Casts a ray from screen pixel into the scene, intersects the sphere of radius `PLOT_SCALE`, returns `{lat, lon}` or `null` if it misses. Uses identical camera basis math (fovY = π/4).
+- **`drawCSOverlay()`** — draws A/B markers and the dashed great-circle arc on `#pulse-canvas` every rAF frame. Called from `animateGlobe()` after `drawPulses()`. Only runs when `csState.phase !== 0`.
+- **`#cs-drag-overlay`** — fixed full-screen transparent div (z-index 1003) shown only during a phase-3 marker drag to block Plotly globe rotation.
+- **Colors** — `_CS_SCALES` replicates Plotly's colorscale stop definitions; `_csColorFromScale(t, scaleName)` interpolates them. `getColorRange(colorMode)` (in `helpers.js`) provides the data bounds. The panel chart always matches the main globe palette/colour-mode settings.
+
+### Critical: placement uses capture-phase listeners, not canvas pointer-events
+
+Phases 1 & 2 placement is handled by capture-phase listeners on `#chart-container`, **not** a canvas overlay with `pointer-events: auto/none`. The approach:
+- `pointerdown` capture: record start position, **return immediately** — let the event propagate to Plotly so globe rotation works naturally.
+- `pointerup` capture: if movement ≤ 8 px it's a click — `stopImmediatePropagation()` + ray-sphere pick + place point. If > 8 px, do nothing — Plotly already finished the rotation.
+
+**Do not switch back to the synthetic-event approach.** Dispatching a synthetic `pointerdown` to Plotly after the threshold is exceeded causes camera jumps because Plotly's drag code computes deltas from an internal start position that doesn't match where the synthetic event lands. The capture-phase approach avoids all synthetic events entirely.
 
 ## Known quirks
 - `render.js` crash-resume exists because the renderer has a memory leak on long runs — the session system lets the user restart mid-sequence without losing progress. Keep this in mind before simplifying it.

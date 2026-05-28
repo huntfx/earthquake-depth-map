@@ -117,6 +117,74 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
 }
 #gps-btn:hover { background: rgba(0, 255, 255, 0.2); }
 
+/* CROSS-SECTION DRAG OVERLAY — transparent full-screen capture layer */
+#cs-drag-overlay {
+    position: fixed; inset: 0;
+    z-index: 1003;
+    display: none;
+    cursor: crosshair;
+}
+
+/* CROSS-SECTION BUTTON */
+#cs-btn {
+    position: absolute; top: 15px; right: 365px;
+    background: rgba(0, 0, 0, 0.6);
+    color: cyan;
+    border: 1px solid cyan;
+    border-radius: 4px;
+    padding: 0;
+    height: 40px;
+    width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 1001;
+    transition: all 0.2s;
+    box-sizing: border-box;
+}
+#cs-btn svg { width: 20px; height: 20px; }
+#cs-btn:hover { background: rgba(0, 255, 255, 0.2); }
+#cs-btn.active { color: #ff8c00; border-color: #ff8c00; }
+
+/* CROSS-SECTION PANEL */
+#cs-panel {
+    position: fixed; bottom: 20px; left: 20px;
+    width: clamp(280px, 35vw, 500px);
+    background: rgba(15, 15, 15, 0.92);
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 10px 12px 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+    z-index: 999;
+    display: none;
+    box-sizing: border-box;
+}
+#cs-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 4px;
+}
+#cs-title {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #777;
+}
+#cs-close {
+    background: none; border: none; color: #555; cursor: pointer;
+    font-size: 16px; padding: 0; line-height: 1; margin-left: 4px;
+}
+#cs-close:hover { color: white; }
+#cs-status {
+    font-size: 10px; color: #888; margin-bottom: 6px; min-height: 14px;
+}
+#cs-focus-btn {
+    display: none;
+    background: transparent; border: none;
+    color: rgba(255,200,0,0.75);
+    font-size: 11px; cursor: pointer; padding: 0 4px;
+    transition: color 0.2s;
+}
+#cs-focus-btn:hover { color: rgba(255,200,0,1); }
+#cs-canvas { display: block; width: 100%; height: 150px; }
+
 /* LIVE MODE BUTTON */
 #live-btn {
     position: absolute; top: 15px; right: 315px;
@@ -497,6 +565,22 @@ body.light-mode #live-btn {
 }
 body.light-mode #live-btn:hover { background: rgba(0, 0, 0, 0.05); }
 body.light-mode #live-btn.active { color: #ff8c00; border-color: #ff8c00; }
+
+body.light-mode #cs-btn {
+    background: rgba(255, 255, 255, 0.9); color: #333; border-color: #333;
+}
+body.light-mode #cs-btn:hover { background: rgba(0, 0, 0, 0.05); }
+body.light-mode #cs-btn.active { color: #ff8c00; border-color: #ff8c00; }
+body.light-mode #cs-panel {
+    background: rgba(255, 255, 255, 0.95); border-color: #ccc;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+body.light-mode #cs-title { color: #999; }
+body.light-mode #cs-close { color: #bbb; }
+body.light-mode #cs-close:hover { color: #333; }
+body.light-mode #cs-status { color: #888; }
+body.light-mode #cs-focus-btn { color: rgba(180,120,0,0.8); }
+body.light-mode #cs-focus-btn:hover { color: #cc8800; }
 
 body.light-mode #theme-btn, body.light-mode #rotate-btn, body.light-mode #reset-btn, body.light-mode #gps-btn, body.light-mode #timelapse-mode-btn {
     background: rgba(255, 255, 255, 0.9);
