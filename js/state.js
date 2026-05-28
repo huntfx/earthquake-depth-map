@@ -85,6 +85,7 @@ let tlState = {
     soundEnabled: false,
     lastSoundTime: 0,
     lastPulseTime: 0,
+    waveSpeed: 360, // km/s in real time (1 Min / sec = 6 km/s × 60)
     sortedData: [],
     lastDrawTime: 0,
     drawInterval: 25, // ms (10 FPS limit for visual chart updates)

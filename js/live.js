@@ -35,9 +35,10 @@ async function seedLive() {
         const elapsedMs = realNow - feature.properties.time;
         if (elapsedMs < 0) continue;
         const [lon, lat] = feature.geometry.coordinates;
-        const mag = feature.properties.mag || 2.5;
-        if ((elapsedMs / 1000) * LIVE_WAVE_SPEED >= LIVE_MAX_RADIUS) continue;
-        pulseStates.push({ startTime: perfNow - elapsedMs, lat, lon, maxRadius: LIVE_MAX_RADIUS, mag, speed: LIVE_WAVE_SPEED, live: true });
+        const mag       = feature.properties.mag || 2.5;
+        const maxRadius = Math.max(500, Math.exp(mag / 1.5) * 20);
+        if ((elapsedMs / 1000) * LIVE_WAVE_SPEED >= maxRadius) continue;
+        pulseStates.push({ startTime: perfNow - elapsedMs, lat, lon, maxRadius, mag, speed: LIVE_WAVE_SPEED, live: true });
     }
 }
 
@@ -58,7 +59,8 @@ async function pollLive() {
 }
 
 function _triggerLivePulse(lat, lon, mag, startTime = performance.now()) {
-    pulseStates.push({ startTime, lat, lon, maxRadius: LIVE_MAX_RADIUS, mag, speed: LIVE_WAVE_SPEED, live: true });
+    const maxRadius = Math.max(500, Math.exp(mag / 1.5) * 20);
+    pulseStates.push({ startTime, lat, lon, maxRadius, mag, speed: LIVE_WAVE_SPEED, live: true });
 }
 
 async function fetchLiveFeed() {

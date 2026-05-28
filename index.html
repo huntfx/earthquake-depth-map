@@ -71,6 +71,15 @@
             <input type="range" id="tl-scrubber" min="0" max="100" value="0">
         </div>
         <div class="tl-row tl-options-row">
+             <label class="tl-trail-label">Wave:</label>
+             <select id="tl-wave-speed" class="tl-select tl-window-select">
+                <option value="0">Realtime</option>
+                <option value="360" selected>1 Min / sec</option>
+                <option value="1800">5 Min / sec</option>
+                <option value="10800">30 Min / sec</option>
+                <option value="21600">1 Hr / sec</option>
+             </select>
+
              <label class="tl-trail-label">Trail:</label>
              <select id="tl-window" class="tl-select tl-window-select">
                 <option value="86400000">1 Day</option>

@@ -238,10 +238,13 @@ function setupControls() {
     document.getElementById('live-btn').addEventListener('click', () => {
         wavesEnabled = !wavesEnabled;
         if (!wavesEnabled) {
-            pulseStates = [];
             tlState.lastPulseTime = tlState.currentTime;
-        } else if (liveState.active) {
-            seedLive();
+            // When timelapse is paused, preserve pulseStates — they're frozen in
+            // place and can be redrawn as-is when waves are re-enabled.
+            if (!tlState.active || tlState.playing || liveState.active) pulseStates = [];
+        } else {
+            if (liveState.active) { pulseStates = []; seedLive(); }
+            else if (tlState.active && pulseStates.length === 0) restoreActivePulses();
         }
         document.getElementById('live-btn').classList.toggle('active', wavesEnabled);
     });

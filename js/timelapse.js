@@ -5,6 +5,7 @@ async function startTimeLapse() {
     }
 
     stopLive();
+    console.log(`Wave speed is set to ${tlState.waveSpeed} km/s`);
     initAudio();
 
     document.getElementById('side-panel').classList.remove('open');
@@ -157,6 +158,13 @@ document.getElementById('tl-speed').addEventListener('change', (e) => {
 document.getElementById('tl-window').addEventListener('change', (e) => {
     tlState.windowSize = parseInt(e.target.value);
     if (!tlState.playing) updateTimeLapseFrame();
+});
+
+document.getElementById('tl-wave-speed').addEventListener('change', (e) => {
+    tlState.waveSpeed = parseInt(e.target.value);
+    console.log(`Wave speed is set to ${tlState.waveSpeed} km/s`);
+    tlState.lastPulseTime = tlState.currentTime;
+    restoreActivePulses();
 });
 
 document.getElementById('tl-pop-check').addEventListener('change', (e) => {

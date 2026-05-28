@@ -1,5 +1,3 @@
-const WAVE_SPEED   = 300; // km/s — shared by drawPulses and restoreActivePulses
-const RING_SPACING =  50; // km between successive rings
 
 let _pulseNow         = performance.now();
 let _pulseWasFrozen   = false;
@@ -16,21 +14,19 @@ function restoreActivePulses() {
     const T              = tlState.currentTime;
     const realMsPerSimMs = 1000 / tlState.speed;
     const now            = performance.now();
+    const speed          = tlState.waveSpeed > 0 ? tlState.waveSpeed : LIVE_WAVE_SPEED * tlState.speed / 1000;
 
-    // Waves from large quakes can still be expanding long after the quake has
-    // scrolled past the display window. Compute the furthest back we need to
-    // look: the sim-time equivalent of the longest possible wave duration.
-    const datasetMaxRadius  = Math.max(500, Math.exp(stats.maxMag / 1.5) * 20);
-    const pulseWindowStart  = T - (datasetMaxRadius / WAVE_SPEED) * 1000 / realMsPerSimMs;
+    const maxPossibleRadius = Math.max(500, Math.exp(stats.maxMag / 1.5) * 20);
+    const pulseWindowStart  = T - (maxPossibleRadius / speed) * 1000 / realMsPerSimMs;
 
     for (const q of tlState.sortedData) {
         if (q.time > T) break;
         if (q.time <= pulseWindowStart) continue;
         const maxRadius = Math.max(500, Math.exp(q.realMag / 1.5) * 20);
         const realAge   = (T - q.time) * realMsPerSimMs;
-        const radius    = (realAge / 1000) * WAVE_SPEED;
+        const radius    = (realAge / 1000) * speed;
         if (radius < maxRadius) {
-            pulseStates.push({ startTime: now - realAge, lat: q.lat, lon: q.lon, maxRadius, mag: q.realMag });
+            pulseStates.push({ startTime: now - realAge, lat: q.lat, lon: q.lon, maxRadius, mag: q.realMag, speed });
         }
     }
 
@@ -44,8 +40,9 @@ function restoreActivePulses() {
 // Initialise the pulse animation for a clicked earthquake.
 function triggerPulse(q) {
     if (!q || q.type === 'volcano') return;
+    const speed     = tlState.waveSpeed > 0 ? tlState.waveSpeed : LIVE_WAVE_SPEED * tlState.speed / 1000;
     const maxRadius = Math.max(500, Math.exp(q.realMag / 1.5) * 20);
-    pulseStates.push({ startTime: performance.now(), lat: q.lat, lon: q.lon, maxRadius, mag: q.realMag });
+    pulseStates.push({ startTime: performance.now(), lat: q.lat, lon: q.lon, maxRadius, mag: q.realMag, speed });
 }
 
 // Helper function to generate circle points on sphere
@@ -172,7 +169,7 @@ function drawPulses() {
             console.log(`[live] Wave fired: M${pulse.mag.toFixed(1)} lat=${pulse.lat.toFixed(3)} lon=${pulse.lon.toFixed(3)}`);
             pulse.fired = true;
         }
-        const radius   = elapsed * (pulse.speed || WAVE_SPEED);
+        const radius   = elapsed * pulse.speed;
         const progress = radius / pulse.maxRadius;
         if (progress >= 1) return false;
 
