@@ -234,6 +234,18 @@ function setupControls() {
         }
     });
 
+    // Waves toggle
+    document.getElementById('live-btn').addEventListener('click', () => {
+        wavesEnabled = !wavesEnabled;
+        if (!wavesEnabled) {
+            pulseStates = [];
+            tlState.lastPulseTime = tlState.currentTime;
+        } else if (liveState.active) {
+            seedLive();
+        }
+        document.getElementById('live-btn').classList.toggle('active', wavesEnabled);
+    });
+
     // Reset view
     document.getElementById('reset-btn').addEventListener('click', () => {
         stopAutoRotate();
@@ -242,6 +254,9 @@ function setupControls() {
         Plotly.relayout('chart-container', { 'scene.camera': defaultCam });
         document.getElementById('rotate-btn').innerHTML = '❚❚';
         updatePlot();
+        wavesEnabled = true;
+        document.getElementById('live-btn').classList.add('active');
+        startLive();
         rotationTimeout = setTimeout(() => {
             autoRotate = true;
             rotationTimeout = null;
@@ -324,7 +339,7 @@ function setupControls() {
 
     // Simulate wave
     document.getElementById('qi-sim-btn').addEventListener('click', () => {
-        if (selectedQuake) triggerPulse(selectedQuake);
+        if (selectedQuake) _triggerLivePulse(selectedQuake.lat, selectedQuake.lon, selectedQuake.realMag || selectedQuake.mag);
     });
 
     // Search — Zones
@@ -516,6 +531,8 @@ async function initApp() {
 
         setupInteraction();
         requestAnimationFrame(animateGlobe);
+        startLive();
+        document.getElementById('live-btn').classList.add('active');
         initResumeCheck();
 
     } catch (err) {

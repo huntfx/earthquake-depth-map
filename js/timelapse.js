@@ -4,6 +4,7 @@ async function startTimeLapse() {
         return;
     }
 
+    stopLive();
     initAudio();
 
     document.getElementById('side-panel').classList.remove('open');
@@ -168,10 +169,6 @@ document.getElementById('tl-sound-check').addEventListener('change', (e) => {
     if (e.target.checked) initAudio();
 });
 
-document.getElementById('tl-waves-check').addEventListener('change', (e) => {
-    tlState.pulseEnabled = e.target.checked;
-    tlState.lastPulseTime = tlState.currentTime;
-});
 
 document.getElementById('tl-scrubber').addEventListener('input', (e) => {
     const percent = parseFloat(e.target.value);

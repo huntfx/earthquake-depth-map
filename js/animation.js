@@ -1,5 +1,5 @@
-const WAVE_SPEED    = 300; // km/s — shared by drawPulses and restoreActivePulses
-const RING_SPACING  = 180; // km — spacing between rings; inter-ring delay = RING_SPACING / WAVE_SPEED s
+const WAVE_SPEED   = 300; // km/s — shared by drawPulses and restoreActivePulses
+const RING_SPACING =  50; // km between successive rings
 
 let _pulseNow         = performance.now();
 let _pulseWasFrozen   = false;
@@ -11,7 +11,7 @@ let _pulseFreezeStart = 0;
 // the natural cap — no arbitrary count limit needed.
 function restoreActivePulses() {
     pulseStates = [];
-    if (!tlState.pulseEnabled || !tlState.sortedData || !tlState.sortedData.length) return;
+    if (!wavesEnabled || !tlState.sortedData || !tlState.sortedData.length) return;
 
     const T              = tlState.currentTime;
     const realMsPerSimMs = 1000 / tlState.speed;
@@ -23,21 +23,14 @@ function restoreActivePulses() {
     const datasetMaxRadius  = Math.max(500, Math.exp(stats.maxMag / 1.5) * 20);
     const pulseWindowStart  = T - (datasetMaxRadius / WAVE_SPEED) * 1000 / realMsPerSimMs;
 
-    const ringDelayMs = (RING_SPACING / WAVE_SPEED) * 1000;
-
     for (const q of tlState.sortedData) {
         if (q.time > T) break;
         if (q.time <= pulseWindowStart) continue;
         const maxRadius = Math.max(500, Math.exp(q.realMag / 1.5) * 20);
         const realAge   = (T - q.time) * realMsPerSimMs;
-        const rings     = q.realMag >= 7.5 ? 3 : q.realMag >= 6.0 ? 2 : 1;
-        for (let k = 0; k < rings; k++) {
-            const ringAge = realAge - k * ringDelayMs;
-            if (ringAge < 0) continue; // this ring hasn't fired yet
-            const radius  = (ringAge / 1000) * WAVE_SPEED;
-            if (radius < maxRadius) {
-                pulseStates.push({ startTime: now - ringAge, lat: q.lat, lon: q.lon, maxRadius, mag: q.realMag });
-            }
+        const radius    = (realAge / 1000) * WAVE_SPEED;
+        if (radius < maxRadius) {
+            pulseStates.push({ startTime: now - realAge, lat: q.lat, lon: q.lon, maxRadius, mag: q.realMag });
         }
     }
 
@@ -49,16 +42,10 @@ function restoreActivePulses() {
 }
 
 // Initialise the pulse animation for a clicked earthquake.
-// M6+ emits 2 rings, M7.5+ emits 3. Each ring fires RING_SPACING/WAVE_SPEED seconds after the previous.
 function triggerPulse(q) {
     if (!q || q.type === 'volcano') return;
-    const maxRadius   = Math.max(500, Math.exp(q.realMag / 1.5) * 20);
-    const rings       = q.realMag >= 7.5 ? 3 : q.realMag >= 6.0 ? 2 : 1;
-    const now         = performance.now();
-    const ringDelayMs = (RING_SPACING / WAVE_SPEED) * 1000;
-    for (let k = 0; k < rings; k++) {
-        pulseStates.push({ startTime: now + k * ringDelayMs, lat: q.lat, lon: q.lon, maxRadius, mag: q.realMag });
-    }
+    const maxRadius = Math.max(500, Math.exp(q.realMag / 1.5) * 20);
+    pulseStates.push({ startTime: performance.now(), lat: q.lat, lon: q.lon, maxRadius, mag: q.realMag });
 }
 
 // Helper function to generate circle points on sphere
@@ -143,14 +130,13 @@ function _project3D(W, H, lc, x, y, z) {
     };
 }
 
+
 // Draw all active pulse waves onto the canvas overlay.
 function drawPulses() {
     const canvas = document.getElementById('pulse-canvas');
-    if (!canvas || pulseStates.length === 0) {
-        if (canvas) {
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-        }
+    if (!canvas) return;
+    if (!wavesEnabled || pulseStates.length === 0) {
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
         return;
     }
 
@@ -181,22 +167,24 @@ function drawPulses() {
 
     pulseStates = pulseStates.filter(pulse => {
         const elapsed  = (now - pulse.startTime) / 1000;
-        if (elapsed < 0) return true; // ring not yet fired — keep pending
-        const radius   = elapsed * WAVE_SPEED;
+        if (elapsed < 0) return true; // not yet fired — keep pending
+        if (pulse.live && !pulse.fired) {
+            console.log(`[live] Wave fired: M${pulse.mag.toFixed(1)} lat=${pulse.lat.toFixed(3)} lon=${pulse.lon.toFixed(3)}`);
+            pulse.fired = true;
+        }
+        const radius   = elapsed * (pulse.speed || WAVE_SPEED);
         const progress = radius / pulse.maxRadius;
         if (progress >= 1) return false;
 
-        const opacity   = 1 - Math.pow(progress, 1.5);
-        const lineWidth = Math.max(1, pulse.mag * 0.7);
-        const pts       = getCirclePoints(pulse.lat, pulse.lon, radius);
+        const opacity = 0.9 * (1 - Math.pow(progress, 1.5));
 
+        const [r, g, b] = isLightMode ? [50, 50, 50] : [255, 255, 255];
+
+        const pts = getCirclePoints(pulse.lat, pulse.lon, radius);
         ctx.beginPath();
         let penUp = true;
         for (let i = 0; i < pts.x.length; i++) {
-            if (pts.x[i] * ex + pts.y[i] * ey + pts.z[i] * ez < 0) {
-                penUp = true;
-                continue;
-            }
+            if (pts.x[i] * ex + pts.y[i] * ey + pts.z[i] * ez < 0) { penUp = true; continue; }
             const p = _project3D(W, H, lc, pts.x[i], pts.y[i], pts.z[i]);
             if (!p) { penUp = true; continue; }
             const cx = (p.ndcX + 1) * 0.5 * W;
@@ -204,10 +192,8 @@ function drawPulses() {
             if (penUp) { ctx.moveTo(cx, cy); penUp = false; }
             else ctx.lineTo(cx, cy);
         }
-        ctx.strokeStyle = isLightMode
-            ? `rgba(50,50,50,${opacity.toFixed(2)})`
-            : `rgba(255,255,255,${opacity.toFixed(2)})`;
-        ctx.lineWidth = lineWidth * opacity;
+        ctx.strokeStyle = `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
+        ctx.lineWidth   = Math.max(0.5, pulse.mag * 0.3);
         ctx.stroke();
         return true;
     });
@@ -254,15 +240,14 @@ function tickTimeLapse() {
         tlState.lastSoundTime = tlState.currentTime;
     }
 
-    if (tlState.pulseEnabled) {
+    {
         let checkTime = tlState.lastPulseTime;
-        if (tlState.currentTime < checkTime) {
-            checkTime = tlState.startTime - 1000;
-            tlState.lastPulseTime = checkTime;
+        if (tlState.currentTime < checkTime) checkTime = tlState.startTime - 1000;
+        if (wavesEnabled) {
+            tlState.sortedData
+                .filter(q => q.time > checkTime && q.time <= tlState.currentTime)
+                .forEach(q => triggerPulse(q));
         }
-        tlState.sortedData
-            .filter(q => q.time > checkTime && q.time <= tlState.currentTime)
-            .forEach(q => triggerPulse(q));
         tlState.lastPulseTime = tlState.currentTime;
     }
 

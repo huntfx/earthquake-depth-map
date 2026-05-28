@@ -12,6 +12,14 @@
     <div id="loading">Initializing...</div>
 
     <!-- BUTTONS -->
+    <button id="live-btn" title="Waves">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="17" r="1.8" fill="currentColor"/>
+            <path d="M9 17 A3 3 0 0 1 15 17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M6 17 A6 6 0 0 1 18 17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M3 17 A9 9 0 0 1 21 17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+    </button>
     <button id="mag-chart-btn">
         <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
             <rect x="2"  y="12" width="4" height="6" rx="0.5"/>
@@ -75,12 +83,6 @@
              <div class="tl-toggle">
                 <input type="checkbox" id="tl-pop-check" checked>
                 <label for="tl-pop-check">Pop In Animation</label>
-             </div>
-
-             <!-- WAVES TOGGLE -->
-             <div class="tl-toggle">
-                <input type="checkbox" id="tl-waves-check" checked>
-                <label for="tl-waves-check">Waves</label>
              </div>
 
              <!-- SOUND TOGGLE -->
@@ -312,6 +314,7 @@
     <script src="js/timelapse.js"></script>
     <script src="js/plot.js"></script>
     <script src="js/animation.js"></script>
+    <script src="js/live.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

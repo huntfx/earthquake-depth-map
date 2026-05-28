@@ -117,6 +117,36 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
 }
 #gps-btn:hover { background: rgba(0, 255, 255, 0.2); }
 
+/* LIVE MODE BUTTON */
+#live-btn {
+    position: absolute; top: 15px; right: 315px;
+    background: rgba(0, 0, 0, 0.6);
+    color: cyan;
+    border: 1px solid cyan;
+    border-radius: 4px;
+    padding: 0;
+    height: 40px;
+    width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 1001;
+    transition: all 0.2s;
+    box-sizing: border-box;
+}
+#live-btn svg { width: 20px; height: 20px; }
+#live-btn:hover { background: rgba(0, 255, 255, 0.2); }
+#live-btn.active {
+    color: #ff8c00;
+    border-color: #ff8c00;
+    animation: live-glow 2s ease-in-out infinite;
+}
+@keyframes live-glow {
+    0%, 100% { box-shadow: 0 0 6px rgba(255, 140, 0, 0.4); }
+    50%       { box-shadow: 0 0 14px rgba(255, 140, 0, 0.8); }
+}
+
 /* MAG CHART BUTTON */
 #mag-chart-btn {
     position: absolute; top: 15px; right: 265px;
@@ -460,6 +490,14 @@ body.light-mode #mag-chart-panel {
 body.light-mode #mag-chart-title { color: #999; }
 body.light-mode #mag-chart-close { color: #bbb; }
 body.light-mode #mag-chart-close:hover { color: #333; }
+body.light-mode #live-btn {
+    background: rgba(255, 255, 255, 0.9);
+    color: #333;
+    border-color: #333;
+}
+body.light-mode #live-btn:hover { background: rgba(0, 0, 0, 0.05); }
+body.light-mode #live-btn.active { color: #ff8c00; border-color: #ff8c00; }
+
 body.light-mode #theme-btn, body.light-mode #rotate-btn, body.light-mode #reset-btn, body.light-mode #gps-btn, body.light-mode #timelapse-mode-btn {
     background: rgba(255, 255, 255, 0.9);
     color: #333;

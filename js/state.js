@@ -62,6 +62,16 @@ let autoRotate = true;
 let isLightMode = false;
 let rotationTimeout = null;
 
+let wavesEnabled = true;
+
+// --- Live Mode State ---
+const liveState = {
+    active: false,
+    pollInterval: null,
+    knownIds: new Set(),
+    lastPollTime: null
+};
+
 // --- Time Lapse State ---
 let tlState = {
     active: false,
@@ -74,7 +84,6 @@ let tlState = {
     popEnabled: true, // Default to true
     soundEnabled: false,
     lastSoundTime: 0,
-    pulseEnabled: true,
     lastPulseTime: 0,
     sortedData: [],
     lastDrawTime: 0,

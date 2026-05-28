@@ -1,5 +1,5 @@
 async function fetchDataAndPlot(isInitial = false) {
-    if (!isInitial && tlState.active) stopTimeLapse();
+    if (!isInitial) { if (tlState.active) stopTimeLapse(); stopLive(); }
     const loading = document.getElementById('loading');
     loading.style.display = 'block';
     loading.innerText = "Querying USGS...";
