@@ -427,6 +427,7 @@ const _csChartDiv = document.getElementById('chart-container');
 let _csPlaceStartX = 0, _csPlaceStartY = 0;
 
 _csChartDiv.addEventListener('pointerdown', e => {
+    if (!e.isPrimary) return; // ignore a second touch finger (pinch/pan owns multi-touch)
     if (csState.phase === 1 || csState.phase === 2) {
         // Record where the press started; let event propagate to Plotly for globe rotation.
         _csPlaceStartX = e.clientX;
@@ -449,6 +450,7 @@ _csChartDiv.addEventListener('pointerdown', e => {
 
 // Clean click in phases 1/2: place the point. Drags are ignored (let Plotly finish).
 _csChartDiv.addEventListener('pointerup', e => {
+    if (!e.isPrimary) return;
     if (csState.phase !== 1 && csState.phase !== 2) return;
     const dx = e.clientX - _csPlaceStartX, dy = e.clientY - _csPlaceStartY;
     if (Math.sqrt(dx*dx + dy*dy) > 8) return; // drag — Plotly already handled it
@@ -473,6 +475,7 @@ let _csDragThrottle = 0;
 const _csDragOverlay = document.getElementById('cs-drag-overlay');
 
 _csDragOverlay.addEventListener('pointermove', e => {
+    if (!e.isPrimary) return;
     if (!csState.dragging) return;
     const gd = getChartDiv();
     const lc = getLiveCamera();
@@ -490,7 +493,8 @@ _csDragOverlay.addEventListener('pointermove', e => {
     }
 });
 
-_csDragOverlay.addEventListener('pointerup', () => {
+_csDragOverlay.addEventListener('pointerup', e => {
+    if (!e.isPrimary) return;
     if (!csState.dragging) return;
     csState.dragging = null;
     document.getElementById('cs-drag-overlay').style.display = 'none';

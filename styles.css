@@ -1,5 +1,32 @@
 body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-family: sans-serif; overflow: hidden; transition: background-color 0.3s; }
 
+button { touch-action: manipulation; }
+
+/* TOP-RIGHT ICON BUTTON ROW — flex so it wraps onto a second line instead of
+   overflowing off-screen on narrow phone viewports (was 8 individually
+   right-offset absolute buttons totalling ~400px). */
+#top-controls {
+    /* left+right (not right+width/max-width) gives this a definite computed width —
+       an auto-width flex container sizing via shrink-to-fit never reliably wraps its
+       children even with flex-wrap set, since its own width tracks max-content first. */
+    position: fixed; top: 15px; left: 15px; right: 15px;
+    z-index: 1001;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+    /* This box now spans the full width to get correct wrap behaviour, but it must
+       stay invisible to clicks/touches in the gaps between buttons and in the space
+       to the left of them (where the globe/menu-btn are) — only the buttons themselves
+       should be interactive. */
+    pointer-events: none;
+}
+#top-controls button { pointer-events: auto; }
+@media (max-width: 480px) {
+    #top-controls { gap: 8px; }
+    #top-controls button { width: 34px; height: 34px; font-size: 16px; }
+}
+
 /* DARK MODE (DEFAULT) */
 #menu-btn {
     position: absolute; top: 15px; left: 15px;
@@ -22,7 +49,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
 
 /* THEME TOGGLE BUTTON */
 #theme-btn {
-    position: absolute; top: 15px; right: 15px;
     background: rgba(0, 0, 0, 0.6);
     color: cyan;
     border: 1px solid cyan;
@@ -35,7 +61,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 1001;
     transition: all 0.2s;
     line-height: 1;
     box-sizing: border-box;
@@ -44,7 +69,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
 
 /* ROTATION TOGGLE BUTTON */
 #rotate-btn {
-    position: absolute; top: 15px; right: 65px;
     background: rgba(0, 0, 0, 0.6);
     color: cyan;
     border: 1px solid cyan;
@@ -57,7 +81,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 1001;
     transition: all 0.2s;
     line-height: 1;
     box-sizing: border-box;
@@ -66,7 +89,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
 
 /* RESET VIEW BUTTON */
 #reset-btn {
-    position: absolute; top: 15px; right: 115px;
     background: rgba(0, 0, 0, 0.6);
     color: cyan;
     border: 1px solid cyan;
@@ -79,7 +101,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 1001;
     transition: all 0.2s;
     line-height: 1;
     box-sizing: border-box;
@@ -88,7 +109,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
 
 /* GPS BUTTON */
 #gps-btn {
-    position: absolute; top: 15px; right: 165px;
     background: rgba(0, 0, 0, 0.6);
     color: cyan;
     border: 1px solid cyan;
@@ -100,7 +120,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 1001;
     transition: all 0.2s;
     box-sizing: border-box;
 }
@@ -123,11 +142,11 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
     z-index: 1003;
     display: none;
     cursor: crosshair;
+    touch-action: none;
 }
 
 /* CROSS-SECTION BUTTON */
 #cs-btn {
-    position: absolute; top: 15px; right: 365px;
     background: rgba(0, 0, 0, 0.6);
     color: cyan;
     border: 1px solid cyan;
@@ -139,7 +158,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 1001;
     transition: all 0.2s;
     box-sizing: border-box;
 }
@@ -187,7 +205,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
 
 /* LIVE MODE BUTTON */
 #live-btn {
-    position: absolute; top: 15px; right: 315px;
     background: rgba(0, 0, 0, 0.6);
     color: cyan;
     border: 1px solid cyan;
@@ -199,7 +216,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 1001;
     transition: all 0.2s;
     box-sizing: border-box;
 }
@@ -217,7 +233,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
 
 /* MAG CHART BUTTON */
 #mag-chart-btn {
-    position: absolute; top: 15px; right: 265px;
     background: rgba(0, 0, 0, 0.6);
     color: cyan;
     border: 1px solid cyan;
@@ -229,7 +244,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 1001;
     transition: all 0.2s;
     box-sizing: border-box;
 }
@@ -265,7 +279,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
 
 /* TIMELAPSE BUTTON (MOVED TO HEADER) */
 #timelapse-mode-btn {
-    position: absolute; top: 15px; right: 215px; /* Left of GPS (165 + 50) */
     background: rgba(0, 0, 0, 0.6);
     color: cyan;
     border: 1px solid cyan;
@@ -278,7 +291,6 @@ body, html { margin: 0; padding: 0; height: 100%; background-color: black; font-
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 1001;
     transition: all 0.2s;
     line-height: 1;
     box-sizing: border-box;
@@ -315,7 +327,23 @@ h2 { margin: 0 0 20px 0; font-size: 22px; color: cyan; border-bottom: 1px solid 
 h3 { margin: 20px 0 10px 0; font-size: 14px; color: #888; text-transform: uppercase; border-bottom: 1px solid #444; padding-bottom: 5px; }
 h3:first-of-type { margin-top: 0; }
 
-.control-group { margin-bottom: 15px; width: 100%; }
+.control-group { margin-bottom: 15px; width: 100%; position: relative; }
+
+/* Custom autocomplete dropdown (replaces <datalist>, unsupported on iOS Safari) */
+.ac-list {
+    display: none;
+    position: absolute; left: 0; right: 0; top: 100%;
+    background: #222; border: 1px solid #555; border-top: none;
+    border-radius: 0 0 4px 4px;
+    max-height: 160px; overflow-y: auto;
+    z-index: 20;
+}
+.ac-list.open { display: block; }
+.ac-item { padding: 8px 10px; font-size: 13px; color: #ddd; cursor: pointer; }
+.ac-item:hover, .ac-item.active { background: rgba(0, 255, 255, 0.15); color: cyan; }
+body.light-mode .ac-list { background: white; border-color: #bbb; }
+body.light-mode .ac-item { color: #333; }
+body.light-mode .ac-item:hover, body.light-mode .ac-item.active { background: rgba(0, 128, 128, 0.1); color: #008080; }
 
 label { display: block; font-size: 12px; margin-bottom: 5px; color: #aaa; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;}
 span.val { color: white; float: right; }
@@ -380,7 +408,9 @@ select {
 }
 #load-btn:hover, #render-btn:hover { background: #ccffff; }
 
-#chart-container { height: 100vh; width: 100%; }
+/* touch-action: none hands all touch gestures on the globe to our own JS (rotate/
+   pinch-zoom/two-finger pan) instead of the browser's native page pinch-zoom/scroll. */
+#chart-container { height: 100vh; width: 100%; touch-action: none; }
 
 #info-overlay {
     position: absolute; bottom: 15px; left: 15px;
@@ -432,6 +462,12 @@ select {
     position: absolute; top: 5px; right: 10px; cursor: pointer; color: #666; font-size: 18px; font-weight: bold;
 }
 #quake-info-close:hover { color: white; }
+
+/* On narrow screens #top-controls wraps to 2 rows (~95px tall) — push the popup
+   below it so they don't overlap. */
+@media (max-width: 480px) {
+    #quake-info { top: 115px; }
+}
 
 /* SIMULATE BUTTON */
 #qi-sim-btn {

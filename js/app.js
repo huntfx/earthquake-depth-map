@@ -19,6 +19,57 @@ function _resumeTL() {
     }
 }
 
+// --- Touch gesture support: pinch-to-zoom + two-finger pan ---
+// Plotly's gl3d orbit camera only understands a single mouse-like pointer (synthesized
+// from the first touch); it has no native multi-touch pinch/pan support. We drive both
+// manually with the same eye/center/up math used elsewhere (cameraGoTo, animateGlobe's
+// rotation), then feed a full camera object to Plotly.relayout — same rule as everywhere
+// else in this file. Bounds are derived from PLOT_SCALE (the globe's camera-space radius)
+// so zoom can't push the eye inside the globe or absurdly far away.
+const TOUCH_MIN_ZOOM_DIST = PLOT_SCALE * 1.2;
+const TOUCH_MAX_ZOOM_DIST = PLOT_SCALE * 12;
+
+function _applyPinchPan(zoomScale, panDX, panDY, W, H) {
+    const eye = currentCamera.eye, center = currentCamera.center, up = currentCamera.up;
+
+    // Camera basis — same derivation as _project3D / _raySphereLatLon.
+    let fx = center.x - eye.x, fy = center.y - eye.y, fz = center.z - eye.z;
+    const flen = Math.sqrt(fx*fx + fy*fy + fz*fz) || 1;
+    fx /= flen; fy /= flen; fz /= flen;
+
+    let rx = fy*up.z - fz*up.y, ry = fz*up.x - fx*up.z, rz = fx*up.y - fy*up.x;
+    const rlen = Math.sqrt(rx*rx + ry*ry + rz*rz) || 1;
+    rx /= rlen; ry /= rlen; rz /= rlen;
+
+    const ux = ry*fz - rz*fy, uy = rz*fx - rx*fz, uz = rx*fy - ry*fx;
+
+    // Zoom: scale the eye-center offset, clamped so the eye can't cross the globe.
+    let dx = eye.x - center.x, dy = eye.y - center.y, dz = eye.z - center.z;
+    const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1;
+    const newDist = Math.max(TOUCH_MIN_ZOOM_DIST, Math.min(TOUCH_MAX_ZOOM_DIST, dist * zoomScale));
+    const zf = newDist / dist;
+    dx *= zf; dy *= zf; dz *= zf;
+
+    // Pan: translate eye+center together along the screen-space right/up plane, scaled
+    // so the point under the fingers stays under the fingers (gl-plot3d fovY = π/4).
+    const focal  = 1.0 / Math.tan(Math.PI / 8);
+    const aspect = W / H;
+    const worldPerPxX = (newDist / focal) * (2 / W) * aspect;
+    const worldPerPxY = (newDist / focal) * (2 / H);
+    const panWorldX = -panDX * worldPerPxX;
+    const panWorldY =  panDY * worldPerPxY;
+
+    const newCenter = {
+        x: center.x + rx * panWorldX + ux * panWorldY,
+        y: center.y + ry * panWorldX + uy * panWorldY,
+        z: center.z + rz * panWorldX + uz * panWorldY
+    };
+    const newEye = { x: newCenter.x + dx, y: newCenter.y + dy, z: newCenter.z + dz };
+
+    currentCamera = { eye: newEye, center: newCenter, up: { ...up } };
+    Plotly.relayout('chart-container', { 'scene.camera': currentCamera });
+}
+
 // Patch glplot.camera.lookAt — the primitive Plotly 2.27 uses to re-apply the layout
 // camera after every restyle. Blocked when _tlRestyling is true so timelapse data
 // updates cannot snap the WebGL camera to the stale _fullLayout.scene.camera value.
@@ -136,34 +187,86 @@ function setDefaults() {
     updateLabels();
 }
 
-function populateAutocomplete() {
-    const dataList = document.getElementById('locations-list');
-    [...new Set(staticLabelArrays.text)].sort().forEach(name => {
-        const option = document.createElement('option');
-        option.value = name;
-        dataList.appendChild(option);
+// Custom autocomplete dropdown — replaces <datalist>, which iOS Safari doesn't support
+// at all (no suggestion UI would ever show on iPhone). getCandidates() is called lazily
+// on each keystroke rather than once up front, so it always sees the latest data even if
+// this is wired up before that data finishes loading. onSelect(name) fires after the
+// input's value is set to the picked candidate — callers use it to run the search and
+// blur the field, mirroring what the old datalist "insertReplacementText" branch did.
+function _setupAutocomplete(input, list, getCandidates, onSelect) {
+    let matches = [];
+    let activeIndex = -1;
+
+    function render() {
+        list.innerHTML = '';
+        matches.forEach((name, i) => {
+            const item = document.createElement('div');
+            item.className = 'ac-item';
+            item.textContent = name;
+            // pointerdown (not click) + preventDefault — a click fires after the input's
+            // blur, which would already have closed and cleared this list.
+            item.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                pick(name);
+            });
+            list.appendChild(item);
+        });
+        [...list.children].forEach((el, i) => el.classList.toggle('active', i === activeIndex));
+        list.classList.toggle('open', matches.length > 0);
+    }
+
+    function close() {
+        matches = [];
+        activeIndex = -1;
+        list.innerHTML = '';
+        list.classList.remove('open');
+    }
+
+    function pick(name) {
+        input.value = name;
+        close();
+        onSelect(name);
+    }
+
+    // val === '' shows the first 8 candidates unfiltered — lets a short fixed list (e.g.
+    // the 7 seismic zones) be browsed on focus rather than requiring the user to type,
+    // matching how a native <datalist> shows all options on an empty focused input.
+    function open(val) {
+        const candidates = getCandidates();
+        matches = val ? candidates.filter(c => c.toLowerCase().includes(val)).slice(0, 8) : candidates.slice(0, 8);
+        render();
+    }
+
+    input.addEventListener('input', () => {
+        activeIndex = -1;
+        open(input.value.trim().toLowerCase());
     });
 
-    const volcList = document.getElementById('volcanoes-list');
-    [...new Set(rawVolcanoData.map(v => v.name))].sort().forEach(name => {
-        const option = document.createElement('option');
-        option.value = name;
-        volcList.appendChild(option);
+    input.addEventListener('focus', () => {
+        if (!input.value.trim()) open('');
     });
 
-    const zonesList = document.getElementById('zones-list');
-    Object.keys(seismicBookmarks).forEach(name => {
-        const option = document.createElement('option');
-        option.value = name;
-        zonesList.appendChild(option);
+    input.addEventListener('keydown', (e) => {
+        if (!matches.length) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeIndex = Math.min(activeIndex + 1, matches.length - 1);
+            render();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeIndex = Math.max(activeIndex - 1, 0);
+            render();
+        } else if (e.key === 'Enter' && activeIndex >= 0) {
+            e.preventDefault();
+            pick(matches[activeIndex]);
+        } else if (e.key === 'Escape') {
+            close();
+        }
     });
 
-    const notableList = document.getElementById('notable-list');
-    rawNotableData.forEach(e => {
-        const option = document.createElement('option');
-        option.value = e.title;
-        notableList.appendChild(option);
-    });
+    // Delay so a pointerdown on an .ac-item (which doesn't itself steal focus) can still
+    // run before the list gets torn down.
+    input.addEventListener('blur', () => setTimeout(close, 150));
 }
 
 function setupControls() {
@@ -317,11 +420,13 @@ function setupControls() {
         const btn = document.getElementById('search-btn');
         const isValid = staticLabelArrays.text.some(name => name.toLowerCase() === val);
         btn.disabled = !isValid;
-        if (isValid && e.inputType === 'insertReplacementText') {
-            searchLocation();
-            document.getElementById('search-input').blur();
-        }
     });
+    _setupAutocomplete(
+        document.getElementById('search-input'),
+        document.getElementById('search-ac-list'),
+        () => [...new Set(staticLabelArrays.text)],
+        () => { searchLocation(); document.getElementById('search-input').blur(); }
+    );
 
     // Search — Volcanoes
     document.getElementById('volc-search-btn').addEventListener('click', searchVolcano);
@@ -334,11 +439,13 @@ function setupControls() {
         const isValid = rawVolcanoData.some(v => v.name.toLowerCase() === val);
         const isPartial = rawVolcanoData.some(v => v.name.toLowerCase().includes(val));
         btn.disabled = !(isValid || (val.length > 2 && isPartial));
-        if (isValid && e.inputType === 'insertReplacementText') {
-            searchVolcano();
-            document.getElementById('volc-search-input').blur();
-        }
     });
+    _setupAutocomplete(
+        document.getElementById('volc-search-input'),
+        document.getElementById('volc-ac-list'),
+        () => [...new Set(rawVolcanoData.map(v => v.name))],
+        () => { searchVolcano(); document.getElementById('volc-search-input').blur(); }
+    );
 
     // Simulate wave
     document.getElementById('qi-sim-btn').addEventListener('click', () => {
@@ -355,11 +462,13 @@ function setupControls() {
         const btn = document.getElementById('zone-btn');
         const isValid = Object.keys(seismicBookmarks).some(k => k.toLowerCase() === val);
         btn.disabled = !isValid;
-        if (isValid && e.inputType === 'insertReplacementText') {
-            searchZone();
-            document.getElementById('zone-input').blur();
-        }
     });
+    _setupAutocomplete(
+        document.getElementById('zone-input'),
+        document.getElementById('zone-ac-list'),
+        () => Object.keys(seismicBookmarks),
+        () => { searchZone(); document.getElementById('zone-input').blur(); }
+    );
 
     // Search — Notable Events
     document.getElementById('notable-btn').addEventListener('click', searchNotable);
@@ -372,11 +481,13 @@ function setupControls() {
         const isExact = rawNotableData.some(ev => ev.title.toLowerCase() === val);
         const isPartial = rawNotableData.some(ev => ev.title.toLowerCase().includes(val));
         btn.disabled = !(isExact || (val.length > 2 && isPartial));
-        if (isExact && e.inputType === 'insertReplacementText') {
-            searchNotable();
-            document.getElementById('notable-input').blur();
-        }
     });
+    _setupAutocomplete(
+        document.getElementById('notable-input'),
+        document.getElementById('notable-ac-list'),
+        () => rawNotableData.map(ev => ev.title),
+        () => { searchNotable(); document.getElementById('notable-input').blur(); }
+    );
 }
 
 function setupInteraction() {
@@ -396,6 +507,7 @@ function setupInteraction() {
     };
 
     graphDiv.addEventListener('pointerdown', (e) => {
+        if (!e.isPrimary) return; // ignore a second touch finger — see pinch/pan handling below
         clearTimeout(_wheelResumeTimer);
         _wheelResumeTimer = null;
         _pauseTL();
@@ -413,6 +525,7 @@ function setupInteraction() {
     }, {capture: true});
 
     graphDiv.addEventListener('pointermove', (e) => {
+        if (!e.isPrimary) return;
         const dx = Math.abs(e.clientX - interactionState.startX);
         const dy = Math.abs(e.clientY - interactionState.startY);
         if (dx > 3 || dy > 3) {
@@ -429,7 +542,8 @@ function setupInteraction() {
         }
     });
 
-    graphDiv.addEventListener('pointerup', () => {
+    graphDiv.addEventListener('pointerup', (e) => {
+        if (!e.isPrimary) return;
         _resumeTL();
         if (interactionState.isDragging) return;
         if (interactionState.pointData) {
@@ -477,6 +591,75 @@ function setupInteraction() {
         clearTimeout(_wheelResumeTimer);
         _wheelResumeTimer = setTimeout(_resumeTL, 300);
     }, { capture: true });
+
+    // --- Two-finger pinch-zoom / pan ---
+    // Intercepted as raw Touch events (not Pointer events) at the capture phase, before
+    // they reach Plotly's canvas. preventDefault() on touchstart/touchmove here also
+    // suppresses the browser's synthetic compatibility mousemove/mousedown that Plotly's
+    // gl3d orbit camera is driven by — this is what stops Plotly fighting our pinch/pan.
+    // Single-finger touches are left completely alone so Plotly's native touch-orbit
+    // rotation keeps working exactly as before.
+    let _pinchActive = false;
+    let _pinchPrevDist = 0;
+    let _pinchPrevMid = { x: 0, y: 0 };
+
+    function _touchDistMid(touches) {
+        const t0 = touches[0], t1 = touches[1];
+        const dx = t0.clientX - t1.clientX, dy = t0.clientY - t1.clientY;
+        return { dist: Math.hypot(dx, dy), mid: { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 } };
+    }
+
+    graphDiv.addEventListener('touchstart', (e) => {
+        if (e.touches.length >= 2) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            stopAutoRotate();
+            _pauseTL();
+            _pinchActive = true;
+            const { dist, mid } = _touchDistMid(e.touches);
+            _pinchPrevDist = dist;
+            _pinchPrevMid = mid;
+        } else if (_pinchActive) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, { capture: true, passive: false });
+
+    graphDiv.addEventListener('touchmove', (e) => {
+        if (e.touches.length >= 2) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            const { dist, mid } = _touchDistMid(e.touches);
+            if (_pinchPrevDist > 0) {
+                const scale = _pinchPrevDist / dist;
+                const gd = getChartDiv();
+                _applyPinchPan(scale, mid.x - _pinchPrevMid.x, mid.y - _pinchPrevMid.y, gd.clientWidth, gd.clientHeight);
+            }
+            _pinchPrevDist = dist;
+            _pinchPrevMid = mid;
+        } else if (_pinchActive) {
+            // One finger lifted mid-pinch — freeze rather than resume Plotly's rotate
+            // with a stale drag reference (that's what causes camera-snap bugs here).
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, { capture: true, passive: false });
+
+    const _endPinch = (e) => {
+        if (!_pinchActive) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (e.touches.length >= 2) {
+            const { dist, mid } = _touchDistMid(e.touches);
+            _pinchPrevDist = dist;
+            _pinchPrevMid = mid;
+        } else if (e.touches.length === 0) {
+            _pinchActive = false;
+            _resumeTL();
+        }
+    };
+    graphDiv.addEventListener('touchend', _endPinch, { capture: true, passive: false });
+    graphDiv.addEventListener('touchcancel', _endPinch, { capture: true, passive: false });
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
@@ -527,7 +710,6 @@ async function initApp() {
 
         console.log(`Loaded ${rawVolcanoData.length} volcanoes.`);
 
-        populateAutocomplete();
         setupControls();
 
         await fetchDataAndPlot(true);

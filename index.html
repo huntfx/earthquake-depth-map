@@ -12,6 +12,7 @@
     <div id="loading">Initializing...</div>
 
     <!-- BUTTONS -->
+    <div id="top-controls">
     <button id="cs-btn" title="Depth Profile">
         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none">
             <line x1="3" y1="7" x2="21" y2="7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
@@ -47,6 +48,7 @@
     <button id="reset-btn">⟳</button>
     <button id="rotate-btn">❚❚</button>
     <button id="theme-btn">☀</button>
+    </div>
 
     <!-- POPUP -->
     <div id="quake-info">
@@ -119,43 +121,45 @@
         <h2>Earthquake<br>Depth Map</h2>
 
         <!-- Search Feature -->
+        <!-- Custom .ac-list dropdowns replace <datalist> below (iOS Safari doesn't
+             support datalist at all — no suggestion UI would show on iPhone). -->
         <div class="control-group">
             <label>Search Country</label>
             <div class="search-container">
-                <input type="text" id="search-input" placeholder="e.g. Japan, Chile" list="locations-list">
-                <datalist id="locations-list"></datalist>
+                <input type="text" id="search-input" placeholder="e.g. Japan, Chile" autocomplete="off">
                 <button id="search-btn" class="search-btn" disabled>Go</button>
             </div>
+            <div class="ac-list" id="search-ac-list"></div>
         </div>
 
         <!-- Search Volcanoes -->
         <div class="control-group">
             <label>Search Volcano</label>
             <div class="search-container">
-                <input type="text" id="volc-search-input" placeholder="e.g. Fuji, Etna" list="volcanoes-list">
-                <datalist id="volcanoes-list"></datalist>
+                <input type="text" id="volc-search-input" placeholder="e.g. Fuji, Etna" autocomplete="off">
                 <button id="volc-search-btn" class="search-btn" disabled>Go</button>
             </div>
+            <div class="ac-list" id="volc-ac-list"></div>
         </div>
 
         <!-- Seismic Zones -->
         <div class="control-group">
             <label>Seismic Zones</label>
             <div class="search-container">
-                <input type="text" id="zone-input" placeholder="Select Zone..." list="zones-list">
-                <datalist id="zones-list"></datalist>
+                <input type="text" id="zone-input" placeholder="Select Zone..." autocomplete="off">
                 <button id="zone-btn" class="search-btn" disabled>Go</button>
             </div>
+            <div class="ac-list" id="zone-ac-list"></div>
         </div>
 
         <!-- Notable Events -->
         <div class="control-group">
             <label>Notable Events</label>
             <div class="search-container">
-                <input type="text" id="notable-input" placeholder="e.g. Tōhoku, Haiti" list="notable-list">
-                <datalist id="notable-list"></datalist>
+                <input type="text" id="notable-input" placeholder="e.g. Tōhoku, Haiti" autocomplete="off">
                 <button id="notable-btn" class="search-btn" disabled>Go</button>
             </div>
+            <div class="ac-list" id="notable-ac-list"></div>
         </div>
 
         <h3>Presets</h3>
