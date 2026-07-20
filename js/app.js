@@ -183,6 +183,8 @@ function setDefaults() {
     document.getElementById('labels-checkbox').checked = false;
     document.getElementById('volcanoes-checkbox').checked = false;
     document.getElementById('surface-lines-checkbox').checked = false;
+    document.getElementById('waves-checkbox').checked = true;
+    document.getElementById('theme-checkbox').checked = false;
 
     updateLabels();
 }
@@ -309,16 +311,9 @@ function setupControls() {
     });
 
     // Theme toggle
-    document.getElementById('theme-btn').addEventListener('click', () => {
-        isLightMode = !isLightMode;
-        const btn = document.getElementById('theme-btn');
-        if (isLightMode) {
-            document.body.classList.add('light-mode');
-            btn.innerHTML = '☾';
-        } else {
-            document.body.classList.remove('light-mode');
-            btn.innerHTML = '☀';
-        }
+    document.getElementById('theme-checkbox').addEventListener('change', (e) => {
+        isLightMode = e.target.checked;
+        document.body.classList.toggle('light-mode', isLightMode);
         if (tlState.active) updateStaticTracesForTimelapse();
         else updatePlot();
     });
@@ -338,8 +333,8 @@ function setupControls() {
     });
 
     // Waves toggle
-    document.getElementById('live-btn').addEventListener('click', () => {
-        wavesEnabled = !wavesEnabled;
+    document.getElementById('waves-checkbox').addEventListener('change', (e) => {
+        wavesEnabled = e.target.checked;
         if (!wavesEnabled) {
             tlState.lastPulseTime = tlState.currentTime;
             // When timelapse is paused, preserve pulseStates — they're frozen in
@@ -349,7 +344,6 @@ function setupControls() {
             if (liveState.active) { pulseStates = []; seedLive(); }
             else if (tlState.active && pulseStates.length === 0) restoreActivePulses();
         }
-        document.getElementById('live-btn').classList.toggle('active', wavesEnabled);
     });
 
     // Reset view
@@ -361,7 +355,7 @@ function setupControls() {
         document.getElementById('rotate-btn').innerHTML = '❚❚';
         updatePlot();
         wavesEnabled = true;
-        document.getElementById('live-btn').classList.add('active');
+        document.getElementById('waves-checkbox').checked = true;
         startLive();
         rotationTimeout = setTimeout(() => {
             autoRotate = true;
@@ -407,7 +401,6 @@ function setupControls() {
         drawMagChart();
     });
 
-    document.getElementById('mag-chart-btn').addEventListener('click', toggleMagChart);
     document.getElementById('load-btn').addEventListener('click', () => fetchDataAndPlot(false));
 
     // Search — Countries
@@ -717,7 +710,6 @@ async function initApp() {
         setupInteraction();
         requestAnimationFrame(animateGlobe);
         startLive();
-        document.getElementById('live-btn').classList.add('active');
         initResumeCheck();
 
     } catch (err) {

@@ -1,4 +1,4 @@
-let magChartVisible = true;
+let magChartCollapsed = false;
 let _chartW         = 0;
 let _staticCanvas   = null; // offscreen layer: dots, grid, axes — rebuilt when data changes
 
@@ -38,12 +38,12 @@ function _sampleLUT(lut, norm) {
     return [lut[i], lut[i + 1], lut[i + 2]];
 }
 
-function toggleMagChart() {
-    magChartVisible = !magChartVisible;
-    const panel = document.getElementById('mag-chart-panel');
-    panel.style.display = magChartVisible ? 'block' : 'none';
-    if (magChartVisible) {
-        _staticCanvas = null; // force fresh build on open
+function toggleMagChartCollapse() {
+    magChartCollapsed = !magChartCollapsed;
+    document.getElementById('mag-chart-panel').classList.toggle('collapsed', magChartCollapsed);
+    document.getElementById('mag-chart-collapse-btn').textContent = magChartCollapsed ? '▸' : '▾';
+    if (!magChartCollapsed) {
+        _staticCanvas = null; // force fresh build on expand
         drawMagChart();
     }
 }
@@ -57,7 +57,7 @@ let _hoverX = null; // CSS-pixel x position of mouse within canvas, null when no
 
 // Full redraw: blit the static layer then draw the scrubber and hover line on top.
 function drawMagChart() {
-    if (!magChartVisible) return;
+    if (magChartCollapsed) return;
 
     const canvas = document.getElementById('mag-chart');
     const ctx    = canvas.getContext('2d');
@@ -296,7 +296,7 @@ function _buildStaticLayer(W, H, dpr) {
 
 // Hover line and pointer cursor over the plot area.
 document.getElementById('mag-chart').addEventListener('mousemove', (e) => {
-    if (!magChartVisible) return;
+    if (magChartCollapsed) return;
     const canvas = document.getElementById('mag-chart');
     const rect   = canvas.getBoundingClientRect();
     const pad    = CHART_PAD;
@@ -316,7 +316,7 @@ document.getElementById('mag-chart').addEventListener('mouseleave', () => {
 
 // Click to seek timelapse — starts it first if not yet active.
 document.getElementById('mag-chart').addEventListener('mousedown', async (e) => {
-    if (!magChartVisible || rawQuakeData.length === 0) return;
+    if (magChartCollapsed || rawQuakeData.length === 0) return;
     const canvas = document.getElementById('mag-chart');
     const rect   = canvas.getBoundingClientRect();
     const pad    = { left: 26, right: 8 };

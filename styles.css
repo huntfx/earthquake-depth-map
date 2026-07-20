@@ -14,7 +14,7 @@ button { touch-action: manipulation; }
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 10px;
+    gap: 18px;
     /* This box now spans the full width to get correct wrap behaviour, but it must
        stay invisible to clicks/touches in the gaps between buttons and in the space
        to the left of them (where the globe/menu-btn are) — only the buttons themselves
@@ -22,9 +22,21 @@ button { touch-action: manipulation; }
     pointer-events: none;
 }
 #top-controls button { pointer-events: auto; }
+
+/* Two visually distinct clusters — "opens a panel" vs "acts on the view now" —
+   instead of one undifferentiated row of icons. */
+.btn-cluster { display: flex; gap: 10px; }
+.btn-cluster:not(:first-child) {
+    padding-left: 18px;
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+body.light-mode .btn-cluster:not(:first-child) { border-left-color: rgba(0, 0, 0, 0.15); }
+
 @media (max-width: 480px) {
-    #top-controls { gap: 8px; }
+    #top-controls { gap: 14px; }
     #top-controls button { width: 34px; height: 34px; font-size: 16px; }
+    .btn-cluster { gap: 8px; }
+    .btn-cluster:not(:first-child) { padding-left: 14px; }
 }
 
 /* DARK MODE (DEFAULT) */
@@ -46,26 +58,6 @@ button { touch-action: manipulation; }
     box-sizing: border-box;
 }
 #menu-btn:hover { background: rgba(0, 255, 255, 0.2); }
-
-/* THEME TOGGLE BUTTON */
-#theme-btn {
-    background: rgba(0, 0, 0, 0.6);
-    color: cyan;
-    border: 1px solid cyan;
-    border-radius: 4px;
-    font-size: 20px;
-    padding: 0;
-    height: 40px;
-    width: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    line-height: 1;
-    box-sizing: border-box;
-}
-#theme-btn:hover { background: rgba(0, 255, 255, 0.2); }
 
 /* ROTATION TOGGLE BUTTON */
 #rotate-btn {
@@ -203,54 +195,8 @@ button { touch-action: manipulation; }
 #cs-focus-btn:hover { color: rgba(255,200,0,1); }
 #cs-canvas { display: block; width: 100%; height: 150px; }
 
-/* LIVE MODE BUTTON */
-#live-btn {
-    background: rgba(0, 0, 0, 0.6);
-    color: cyan;
-    border: 1px solid cyan;
-    border-radius: 4px;
-    padding: 0;
-    height: 40px;
-    width: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    box-sizing: border-box;
-}
-#live-btn svg { width: 20px; height: 20px; }
-#live-btn:hover { background: rgba(0, 255, 255, 0.2); }
-#live-btn.active {
-    color: #ff8c00;
-    border-color: #ff8c00;
-    animation: live-glow 2s ease-in-out infinite;
-}
-@keyframes live-glow {
-    0%, 100% { box-shadow: 0 0 6px rgba(255, 140, 0, 0.4); }
-    50%       { box-shadow: 0 0 14px rgba(255, 140, 0, 0.8); }
-}
-
-/* MAG CHART BUTTON */
-#mag-chart-btn {
-    background: rgba(0, 0, 0, 0.6);
-    color: cyan;
-    border: 1px solid cyan;
-    border-radius: 4px;
-    padding: 0;
-    height: 40px;
-    width: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    box-sizing: border-box;
-}
-#mag-chart-btn:hover { background: rgba(0, 255, 255, 0.2); }
-#mag-chart-btn svg { width: 18px; height: 18px; fill: cyan; }
-
-/* MAG CHART PANEL */
+/* MAG CHART PANEL — always present; collapses to just its header (click anywhere
+   on the header bar) instead of a separate top-bar show/hide toggle. */
 #mag-chart-panel {
     position: fixed; bottom: 20px; right: 20px;
     width: clamp(280px, 35vw, 500px);
@@ -263,18 +209,29 @@ button { touch-action: manipulation; }
     display: block;
     box-sizing: border-box;
 }
+/* Collapsed: shrink to hug the header content instead of staying at the full chart
+   width. Only `right` (not `left`) is set above, so an auto width naturally sizes to
+   content (shrink-to-fit) while staying anchored to the same right edge. `nowrap` on
+   the title guarantees it never wraps/truncates — the box just sizes to fit it. */
+#mag-chart-panel.collapsed {
+    width: auto;
+    padding-bottom: 10px;
+}
+#mag-chart-panel.collapsed #mag-chart { display: none; }
 #mag-chart-header {
     display: flex; justify-content: space-between; align-items: center;
+    gap: 14px;
     margin-bottom: 6px;
+    cursor: pointer;
 }
 #mag-chart-title {
     font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #777;
+    white-space: nowrap;
 }
-#mag-chart-close {
-    background: none; border: none; color: #555; cursor: pointer;
-    font-size: 16px; padding: 0; line-height: 1;
+#mag-chart-collapse-btn {
+    color: #555; font-size: 14px; line-height: 1; transition: color 0.2s;
 }
-#mag-chart-close:hover { color: white; }
+#mag-chart-header:hover #mag-chart-collapse-btn { color: white; }
 #mag-chart { display: block; width: 100%; }
 
 /* TIMELAPSE BUTTON (MOVED TO HEADER) */
@@ -582,26 +539,13 @@ body.light-mode #menu-btn {
 body.light-mode #menu-btn:hover {
     background: rgba(0, 128, 128, 0.1);
 }
-body.light-mode #mag-chart-btn {
-    background: rgba(255, 255, 255, 0.9); border-color: #333;
-}
-body.light-mode #mag-chart-btn:hover { background: rgba(0, 0, 0, 0.05); }
-body.light-mode #mag-chart-btn svg { fill: #333; }
 body.light-mode #mag-chart-panel {
     background: rgba(255, 255, 255, 0.95); border-color: #ccc;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 body.light-mode #mag-chart-title { color: #999; }
-body.light-mode #mag-chart-close { color: #bbb; }
-body.light-mode #mag-chart-close:hover { color: #333; }
-body.light-mode #live-btn {
-    background: rgba(255, 255, 255, 0.9);
-    color: #333;
-    border-color: #333;
-}
-body.light-mode #live-btn:hover { background: rgba(0, 0, 0, 0.05); }
-body.light-mode #live-btn.active { color: #ff8c00; border-color: #ff8c00; }
-
+body.light-mode #mag-chart-collapse-btn { color: #bbb; }
+body.light-mode #mag-chart-header:hover #mag-chart-collapse-btn { color: #333; }
 body.light-mode #cs-btn {
     background: rgba(255, 255, 255, 0.9); color: #333; border-color: #333;
 }
@@ -618,12 +562,12 @@ body.light-mode #cs-status { color: #888; }
 body.light-mode #cs-focus-btn { color: rgba(180,120,0,0.8); }
 body.light-mode #cs-focus-btn:hover { color: #cc8800; }
 
-body.light-mode #theme-btn, body.light-mode #rotate-btn, body.light-mode #reset-btn, body.light-mode #gps-btn, body.light-mode #timelapse-mode-btn {
+body.light-mode #rotate-btn, body.light-mode #reset-btn, body.light-mode #gps-btn, body.light-mode #timelapse-mode-btn {
     background: rgba(255, 255, 255, 0.9);
     color: #333;
     border-color: #333;
 }
-body.light-mode #theme-btn:hover, body.light-mode #rotate-btn:hover, body.light-mode #reset-btn:hover, body.light-mode #gps-btn:hover, body.light-mode #timelapse-mode-btn:hover {
+body.light-mode #rotate-btn:hover, body.light-mode #reset-btn:hover, body.light-mode #gps-btn:hover, body.light-mode #timelapse-mode-btn:hover {
     background: rgba(0, 0, 0, 0.05);
 }
 body.light-mode #gps-btn svg {

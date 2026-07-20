@@ -12,7 +12,10 @@
     <div id="loading">Initializing...</div>
 
     <!-- BUTTONS -->
+    <!-- Two clusters — "opens a panel" vs "acts on the view now" — separated by a
+         divider so related icons read together instead of one unbroken row. -->
     <div id="top-controls">
+    <div class="btn-cluster">
     <button id="cs-btn" title="Depth Profile">
         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none">
             <line x1="3" y1="7" x2="21" y2="7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
@@ -23,31 +26,18 @@
             <circle cx="12" cy="11" r="1"   fill="currentColor" opacity="0.5"/>
         </svg>
     </button>
-    <button id="live-btn" title="Waves">
-        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="12" cy="17" r="1.8" fill="currentColor"/>
-            <path d="M9 17 A3 3 0 0 1 15 17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-            <path d="M6 17 A6 6 0 0 1 18 17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-            <path d="M3 17 A9 9 0 0 1 21 17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-        </svg>
-    </button>
-    <button id="mag-chart-btn">
-        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-            <rect x="2"  y="12" width="4" height="6" rx="0.5"/>
-            <rect x="8"  y="7"  width="4" height="11" rx="0.5"/>
-            <rect x="14" y="3"  width="4" height="15" rx="0.5"/>
-        </svg>
-    </button>
-    <button id="timelapse-mode-btn">⏱</button>
-    <button id="gps-btn">
+    <button id="timelapse-mode-btn" title="Timelapse">⏱</button>
+    </div>
+    <div class="btn-cluster">
+    <button id="gps-btn" title="My Location">
         <svg viewBox="0 0 24 24">
             <circle cx="12" cy="12" r="10"></circle>
             <circle cx="12" cy="12" r="4" class="inner"></circle>
         </svg>
     </button>
-    <button id="reset-btn">⟳</button>
-    <button id="rotate-btn">❚❚</button>
-    <button id="theme-btn">☀</button>
+    <button id="reset-btn" title="Reset View">⟳</button>
+    <button id="rotate-btn" title="Auto-Rotate">❚❚</button>
+    </div>
     </div>
 
     <!-- POPUP -->
@@ -214,6 +204,11 @@
 
         <h3>Visualization</h3>
 
+        <div class="checkbox-group">
+            <label for="theme-checkbox">Light Mode</label>
+            <input type="checkbox" id="theme-checkbox">
+        </div>
+
         <div class="control-group">
             <label>Palette</label>
             <select id="color-select">
@@ -278,6 +273,11 @@
             <label for="surface-lines-checkbox">Surface Lines</label>
             <input type="checkbox" id="surface-lines-checkbox">
         </div>
+
+        <div class="checkbox-group">
+            <label for="waves-checkbox">Wave Animations</label>
+            <input type="checkbox" id="waves-checkbox">
+        </div>
         <h3>Render Frames</h3>
 
         <div id="resume-container">
@@ -330,10 +330,12 @@
         <canvas id="cs-canvas"></canvas>
     </div>
 
+    <!-- Always present — collapses to just this header (click anywhere on it) rather
+         than a separate show/hide toggle button up in the top-right controls. -->
     <div id="mag-chart-panel">
-        <div id="mag-chart-header">
+        <div id="mag-chart-header" onclick="toggleMagChartCollapse()" title="Collapse / expand">
             <span id="mag-chart-title">Magnitude Timeline</span>
-            <button id="mag-chart-close" onclick="toggleMagChart()">×</button>
+            <span id="mag-chart-collapse-btn">▾</span>
         </div>
         <canvas id="mag-chart"></canvas>
     </div>

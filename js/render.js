@@ -102,13 +102,8 @@ async function resumeRender() {
     const s = session.settings;
 
     isLightMode = s.isLightMode;
-    if (isLightMode) {
-        document.body.classList.add('light-mode');
-        document.getElementById('theme-btn').innerHTML = '☾';
-    } else {
-        document.body.classList.remove('light-mode');
-        document.getElementById('theme-btn').innerHTML = '☀';
-    }
+    document.body.classList.toggle('light-mode', isLightMode);
+    document.getElementById('theme-checkbox').checked = isLightMode;
 
     [
         ['start-date', s.startDate],    ['end-date', s.endDate],
